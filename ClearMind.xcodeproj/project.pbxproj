@@ -1,0 +1,195 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* ClearMindApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* ClearMindApp.swift */; };
+		A10000000000000000000002 /* AppModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* AppModels.swift */; };
+		A10000000000000000000003 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* AppTheme.swift */; };
+		A10000000000000000000004 /* AppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* AppServices.swift */; };
+		A10000000000000000000005 /* BackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* BackupService.swift */; };
+		A10000000000000000000006 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* RootView.swift */; };
+		A10000000000000000000007 /* SharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* SharedViews.swift */; };
+		A10000000000000000000008 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* DashboardView.swift */; };
+		A10000000000000000000009 /* ScheduleViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* ScheduleViews.swift */; };
+		A1000000000000000000000A /* GoalsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* GoalsViews.swift */; };
+		A1000000000000000000000B /* GoalTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* GoalTimelineView.swift */; };
+		A1000000000000000000000C /* LibraryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* LibraryViews.swift */; };
+		A1000000000000000000000D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* SettingsView.swift */; };
+		A1000000000000000000000E /* ClearMindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* ClearMindTests.swift */; };
+		A1000000000000000000000F /* ClearMindUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* ClearMindUITests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C10000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E10000000000000000000001;
+			remoteInfo = ClearMind;
+		};
+		C10000000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E10000000000000000000001;
+			remoteInfo = ClearMind;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B10000000000000000000001 /* ClearMindApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClearMindApp.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* AppModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModels.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* AppServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppServices.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* BackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupService.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* SharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedViews.swift; sourceTree = "<group>"; };
+		B10000000000000000000008 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		B10000000000000000000009 /* ScheduleViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleViews.swift; sourceTree = "<group>"; };
+		B1000000000000000000000A /* GoalsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalsViews.swift; sourceTree = "<group>"; };
+		B1000000000000000000000B /* GoalTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalTimelineView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000C /* LibraryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViews.swift; sourceTree = "<group>"; };
+		B1000000000000000000000D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000E /* ClearMindTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClearMindTests.swift; sourceTree = "<group>"; };
+		B1000000000000000000000F /* ClearMind.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClearMind.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10000000000000000000013 /* ClearMindUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClearMindUITests.swift; sourceTree = "<group>"; };
+		B10000000000000000000014 /* ClearMindUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClearMindUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000010 /* ClearMind.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClearMind.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000011 /* ClearMindTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClearMindTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F10000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000007 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D10000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				D10000000000000000000003 /* ClearMind */,
+				D10000000000000000000008 /* ClearMindTests */,
+				D1000000000000000000000A /* ClearMindUITests */,
+				D10000000000000000000009 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D10000000000000000000003 /* ClearMind */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000001 /* ClearMindApp.swift */,
+				D10000000000000000000004 /* Models */,
+				D10000000000000000000005 /* Services */,
+				D10000000000000000000006 /* Views */,
+				D10000000000000000000007 /* Support */,
+				B1000000000000000000000F /* ClearMind.entitlements */,
+				B10000000000000000000012 /* Info.plist */,
+			);
+			path = ClearMind;
+			sourceTree = "<group>";
+		};
+		D10000000000000000000004 /* Models */ = {isa = PBXGroup; children = (B10000000000000000000002 /* AppModels.swift */,); path = Models; sourceTree = "<group>"; };
+		D10000000000000000000005 /* Services */ = {isa = PBXGroup; children = (B10000000000000000000004 /* AppServices.swift */, B10000000000000000000005 /* BackupService.swift */,); path = Services; sourceTree = "<group>"; };
+		D10000000000000000000006 /* Views */ = {isa = PBXGroup; children = (B10000000000000000000006 /* RootView.swift */, B10000000000000000000007 /* SharedViews.swift */, B10000000000000000000008 /* DashboardView.swift */, B10000000000000000000009 /* ScheduleViews.swift */, B1000000000000000000000A /* GoalsViews.swift */, B1000000000000000000000B /* GoalTimelineView.swift */, B1000000000000000000000C /* LibraryViews.swift */, B1000000000000000000000D /* SettingsView.swift */,); path = Views; sourceTree = "<group>"; };
+		D10000000000000000000007 /* Support */ = {isa = PBXGroup; children = (B10000000000000000000003 /* AppTheme.swift */,); path = Support; sourceTree = "<group>"; };
+		D10000000000000000000008 /* ClearMindTests */ = {isa = PBXGroup; children = (B1000000000000000000000E /* ClearMindTests.swift */,); path = ClearMindTests; sourceTree = "<group>"; };
+		D10000000000000000000009 /* Products */ = {isa = PBXGroup; children = (B10000000000000000000010 /* ClearMind.app */, B10000000000000000000011 /* ClearMindTests.xctest */, B10000000000000000000014 /* ClearMindUITests.xctest */,); name = Products; sourceTree = "<group>"; };
+		D1000000000000000000000A /* ClearMindUITests */ = {isa = PBXGroup; children = (B10000000000000000000013 /* ClearMindUITests.swift */,); path = ClearMindUITests; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E10000000000000000000001 /* ClearMind */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E10000000000000000000005 /* Build configuration list for PBXNativeTarget "ClearMind" */;
+			buildPhases = (F10000000000000000000003 /* Sources */, F10000000000000000000001 /* Frameworks */, F10000000000000000000005 /* Resources */,);
+			buildRules = ();
+			dependencies = ();
+			name = ClearMind;
+			productName = ClearMind;
+			productReference = B10000000000000000000010 /* ClearMind.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E10000000000000000000002 /* ClearMindTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E10000000000000000000006 /* Build configuration list for PBXNativeTarget "ClearMindTests" */;
+			buildPhases = (F10000000000000000000004 /* Sources */, F10000000000000000000002 /* Frameworks */, F10000000000000000000006 /* Resources */,);
+			buildRules = ();
+			dependencies = (E10000000000000000000003 /* PBXTargetDependency */,);
+			name = ClearMindTests;
+			productName = ClearMindTests;
+			productReference = B10000000000000000000011 /* ClearMindTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		E10000000000000000000007 /* ClearMindUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E10000000000000000000008 /* Build configuration list for PBXNativeTarget "ClearMindUITests" */;
+			buildPhases = (F10000000000000000000008 /* Sources */, F10000000000000000000007 /* Frameworks */, F10000000000000000000009 /* Resources */,);
+			buildRules = ();
+			dependencies = (E10000000000000000000009 /* PBXTargetDependency */,);
+			name = ClearMindUITests;
+			productName = ClearMindUITests;
+			productReference = B10000000000000000000014 /* ClearMindUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D10000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 2660; LastUpgradeCheck = 2660; TargetAttributes = {E10000000000000000000001 = {CreatedOnToolsVersion = 26.0;}; E10000000000000000000002 = {CreatedOnToolsVersion = 26.0; TestTargetID = E10000000000000000000001;}; E10000000000000000000007 = {CreatedOnToolsVersion = 26.0; TestTargetID = E10000000000000000000001;};};};
+			buildConfigurationList = E10000000000000000000004 /* Build configuration list for PBXProject "ClearMind" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = zh_Hans;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base, zh_Hans,);
+			mainGroup = D10000000000000000000002;
+			productRefGroup = D10000000000000000000009 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (E10000000000000000000001 /* ClearMind */, E10000000000000000000002 /* ClearMindTests */, E10000000000000000000007 /* ClearMindUITests */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F10000000000000000000005 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000006 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000009 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F10000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000C, A1000000000000000000000D,); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000004 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000000E,); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000008 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000000F,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E10000000000000000000003 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = E10000000000000000000001 /* ClearMind */; targetProxy = C10000000000000000000001 /* PBXContainerItemProxy */; };
+		E10000000000000000000009 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = E10000000000000000000001 /* ClearMind */; targetProxy = C10000000000000000000002 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		E10000000000000000000010 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; GCC_C_LANGUAGE_STANDARD = gnu17; MACOSX_DEPLOYMENT_TARGET = 15.0; SDKROOT = macosx; SWIFT_VERSION = 6.0;}; name = Debug; };
+		E10000000000000000000011 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; GCC_C_LANGUAGE_STANDARD = gnu17; MACOSX_DEPLOYMENT_TARGET = 15.0; SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_VERSION = 6.0;}; name = Release; };
+		E10000000000000000000012 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_ENTITLEMENTS = ClearMind/ClearMind.entitlements; CODE_SIGN_STYLE = Automatic; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_ASSET_PATHS = ""; ENABLE_APP_SANDBOX = YES; ENABLE_HARDENED_RUNTIME = YES; ENABLE_TESTABILITY = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ClearMind/Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.local.ClearMind; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = macosx; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone";}; name = Debug; };
+		E10000000000000000000013 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_ENTITLEMENTS = ClearMind/ClearMind.entitlements; CODE_SIGN_STYLE = Automatic; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; ENABLE_APP_SANDBOX = YES; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ClearMind/Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.local.ClearMind; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = macosx; SWIFT_EMIT_LOC_STRINGS = YES;}; name = Release; };
+		E10000000000000000000014 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.local.ClearMindTests; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClearMind.app/Contents/MacOS/ClearMind";}; name = Debug; };
+		E10000000000000000000015 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.local.ClearMindTests; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClearMind.app/Contents/MacOS/ClearMind";}; name = Release; };
+		E10000000000000000000016 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.local.ClearMindUITests; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = ClearMind;}; name = Debug; };
+		E10000000000000000000017 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.local.ClearMindUITests; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = macosx; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = ClearMind;}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E10000000000000000000004 /* Build configuration list for PBXProject "ClearMind" */ = {isa = XCConfigurationList; buildConfigurations = (E10000000000000000000010 /* Debug */, E10000000000000000000011 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		E10000000000000000000005 /* Build configuration list for PBXNativeTarget "ClearMind" */ = {isa = XCConfigurationList; buildConfigurations = (E10000000000000000000012 /* Debug */, E10000000000000000000013 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		E10000000000000000000006 /* Build configuration list for PBXNativeTarget "ClearMindTests" */ = {isa = XCConfigurationList; buildConfigurations = (E10000000000000000000014 /* Debug */, E10000000000000000000015 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		E10000000000000000000008 /* Build configuration list for PBXNativeTarget "ClearMindUITests" */ = {isa = XCConfigurationList; buildConfigurations = (E10000000000000000000016 /* Debug */, E10000000000000000000017 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = D10000000000000000000001 /* Project object */;
+}
