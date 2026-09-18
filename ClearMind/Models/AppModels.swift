@@ -33,30 +33,6 @@ enum WorkstreamStatus: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum TimelineZoom: String, CaseIterable, Identifiable {
-    case day
-    case week
-    case month
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .day: "日"
-        case .week: "周"
-        case .month: "月"
-        }
-    }
-
-    var pointsPerDay: CGFloat {
-        switch self {
-        case .day: 28
-        case .week: 10
-        case .month: 3.2
-        }
-    }
-}
-
 @Model
 final class Tag {
     @Attribute(.unique) var id: UUID
@@ -217,7 +193,7 @@ final class NearTermItem {
         id: UUID = UUID(),
         title: String,
         details: String = "",
-        reviewDate: Date = Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now,
+        reviewDate: Date = .now,
         isArchived: Bool = false,
         createdAt: Date = .now,
         updatedAt: Date = .now,

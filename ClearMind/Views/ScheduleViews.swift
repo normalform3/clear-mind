@@ -7,49 +7,49 @@ struct ScheduleSection: View {
     @Query(sort: \ScheduleScope.name) private var scopes: [ScheduleScope]
     @AppStorage("selectedScheduleTemplateID") private var selectedTemplateID = ""
 
-    @State private var showingNewTemplate = false
-    @State private var renamingTemplate: ScheduleTemplate?
-    @State private var templatePendingDeletion: ScheduleTemplate?
-    @State private var blockPendingDeletion: ScheduleBlock?
-    @State private var activeDraft: ScheduleBlockDraft?
-    @State private var draftInsertionIndex: Int?
-    @State private var rowErrorMessage: String?
+    @State private var isEditing = false
+    @State private var drafts: [ScheduleBlockDraft] = []
+    @State private var rowIssues: [UUID: ScheduleTableValidationIssue] = [:]
     @State private var errorMessage: String?
 
     private var selectedTemplate: ScheduleTemplate? {
-        templates.first(where: { $0.id.uuidString == selectedTemplateID }) ?? templates.first
+        ScheduleTemplateResolver.canonical(from: templates, selectedID: selectedTemplateID)
     }
 
     var body: some View {
-        IslandSection {
+        DashboardIslandSection {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .center, spacing: 14) {
+                HStack(alignment: .center, spacing: 12) {
                     Text("一天的时间分配")
                         .font(.system(size: 19, weight: .semibold))
 
                     Spacer()
 
-                    if !templates.isEmpty {
-                        Picker("模板", selection: templateSelection) {
-                            ForEach(templates) { template in
-                                Text(template.name).tag(template.id.uuidString)
-                            }
+                    if isEditing {
+                        Button {
+                            drafts.append(ScheduleBlockDraft())
+                            rowIssues = [:]
+                        } label: {
+                            Label("新增一行", systemImage: "plus")
                         }
-                        .labelsHidden()
-                        .frame(maxWidth: 170)
+                        .buttonStyle(QuietButtonStyle())
+                        .accessibilityIdentifier("schedule-add-row")
                     }
 
-                    templateMenu
+                    if isEditing {
+                        Button("取消", action: cancelEditing)
+                            .buttonStyle(QuietButtonStyle())
+                            .keyboardShortcut(.cancelAction)
 
-                    Button {
-                        guard let selectedTemplate else { return }
-                        startNewRow(at: sortedBlocks(in: selectedTemplate).count)
-                    } label: {
-                        Label("新增一行", systemImage: "plus")
+                        Button("完成", action: finishEditing)
+                            .buttonStyle(PrimaryButtonStyle())
+                            .accessibilityIdentifier("schedule-edit-toggle")
+                    } else {
+                        Button("编辑", action: startEditing)
+                            .buttonStyle(QuietButtonStyle())
+                            .disabled(selectedTemplate == nil)
+                            .accessibilityIdentifier("schedule-edit-toggle")
                     }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(selectedTemplate == nil)
-                    .accessibilityIdentifier("schedule-add-row")
                 }
 
                 QuietDivider()
@@ -57,59 +57,14 @@ struct ScheduleSection: View {
                 if let selectedTemplate {
                     scheduleTable(for: selectedTemplate)
                 } else {
-                    EmptyState("正在准备默认模板", message: "模板会保存在这台 Mac 上。")
+                    EmptyState("正在准备时间表", message: "时间表会保存在这台 Mac 上。")
                 }
             }
         }
         .onAppear { ensureSelection() }
         .onChange(of: templates.count) { _, _ in ensureSelection() }
         .onDisappear {
-            if !finishEditing() {
-                cancelEditing()
-            }
-        }
-        .sheet(isPresented: $showingNewTemplate) {
-            TemplateNameSheet(title: "新建模板", initialName: "") { name in
-                let template = ScheduleTemplate(name: name)
-                modelContext.insert(template)
-                try modelContext.save()
-                selectedTemplateID = template.id.uuidString
-            }
-        }
-        .sheet(item: $renamingTemplate) { template in
-            TemplateNameSheet(title: "重命名模板", initialName: template.name) { name in
-                template.name = name
-                template.updatedAt = .now
-                try modelContext.save()
-            }
-        }
-        .confirmationDialog(
-            "删除“\(templatePendingDeletion?.name ?? "")”？",
-            isPresented: Binding(
-                get: { templatePendingDeletion != nil },
-                set: { if !$0 { templatePendingDeletion = nil } }
-            )
-        ) {
-            Button("删除模板", role: .destructive) {
-                if let template = templatePendingDeletion { delete(template) }
-            }
-            Button("取消", role: .cancel) { templatePendingDeletion = nil }
-        } message: {
-            Text("这个模板中的时间块和清单也会被删除。")
-        }
-        .confirmationDialog(
-            "删除这个时间块？",
-            isPresented: Binding(
-                get: { blockPendingDeletion != nil },
-                set: { if !$0 { blockPendingDeletion = nil } }
-            )
-        ) {
-            Button("删除时间块", role: .destructive) {
-                if let block = blockPendingDeletion { delete(block) }
-            }
-            Button("取消", role: .cancel) { blockPendingDeletion = nil }
-        } message: {
-            Text("其中的具体任务也会一起删除。")
+            if isEditing { cancelEditing() }
         }
         .alert("无法完成操作", isPresented: Binding(
             get: { errorMessage != nil },
@@ -121,117 +76,46 @@ struct ScheduleSection: View {
         }
     }
 
-    private var templateSelection: Binding<String> {
-        Binding(
-            get: { selectedTemplate?.id.uuidString ?? "" },
-            set: { newValue in
-                guard finishEditing() else { return }
-                selectedTemplateID = newValue
-            }
-        )
-    }
-
-    private var templateMenu: some View {
-        Menu {
-            Button("新建模板") {
-                guard finishEditing() else { return }
-                showingNewTemplate = true
-            }
-            if let selectedTemplate {
-                Button("重命名") {
-                    guard finishEditing() else { return }
-                    renamingTemplate = selectedTemplate
-                }
-                Button("复制模板") {
-                    guard finishEditing() else { return }
-                    duplicate(selectedTemplate)
-                }
-                Divider()
-                Button("删除模板", role: .destructive) {
-                    guard finishEditing() else { return }
-                    templatePendingDeletion = selectedTemplate
-                }
-                .disabled(templates.count <= 1)
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .frame(width: 24, height: 24)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .help("管理时间表模板")
-    }
-
     @ViewBuilder
     private func scheduleTable(for template: ScheduleTemplate) -> some View {
         let blocks = sortedBlocks(in: template)
 
         VStack(alignment: .leading, spacing: 0) {
-            ScheduleTableHeader()
+            ScheduleTableHeader(isEditing: isEditing)
             QuietDivider()
 
-            if blocks.isEmpty && activeDraft == nil {
-                EmptyState(
-                    "还没有安排时间",
-                    message: "只添加真正想长期保留的时间段，空白本身也是计划的一部分。",
-                    actionTitle: "新增第一行"
-                ) { startNewRow(at: 0) }
-            } else {
-                if activeDraft?.sourceBlockID == nil, draftInsertionIndex == 0 {
-                    editableRow(anchorBlock: nil)
-                    QuietDivider()
-                }
-
-                ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
-                    if activeDraft?.sourceBlockID == block.id {
-                        editableRow(anchorBlock: block)
-                    } else {
-                        ScheduleBlockRow(
-                            block: block,
-                            edit: { startEditing(block) },
-                            insertAbove: { insertRow(relativeTo: block.id, after: false) },
-                            insertBelow: { insertRow(relativeTo: block.id, after: true) },
-                            requestDelete: { blockPendingDeletion = block },
-                            saveError: { errorMessage = $0 }
-                        )
+            if isEditing {
+                if drafts.isEmpty {
+                    EmptyState(
+                        "还没有安排时间",
+                        message: "添加真正想长期保留的时间段，空白本身也可以是计划的一部分。",
+                        actionTitle: "新增第一行"
+                    ) {
+                        drafts.append(ScheduleBlockDraft())
                     }
-                    QuietDivider()
-
-                    if activeDraft?.sourceBlockID == nil, draftInsertionIndex == index + 1 {
-                        editableRow(anchorBlock: nil)
+                } else {
+                    ForEach($drafts) { $draft in
+                        ScheduleEditingRow(
+                            draft: $draft,
+                            scopes: scopes,
+                            errorMessage: rowIssues[draft.id]?.message,
+                            requestDelete: { removeDraft(draft.id) }
+                        )
                         QuietDivider()
                     }
                 }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func editableRow(anchorBlock: ScheduleBlock?) -> some View {
-        if activeDraft != nil {
-            ScheduleEditingRow(
-                draft: Binding(
-                    get: { activeDraft ?? ScheduleBlockDraft() },
-                    set: { activeDraft = $0 }
-                ),
-                scopes: scopes,
-                errorMessage: rowErrorMessage,
-                isNew: activeDraft?.sourceBlockID == nil,
-                commit: { _ = finishEditing() },
-                cancel: cancelEditing,
-                insertAbove: anchorBlock.map { block in
-                    { insertRow(relativeTo: block.id, after: false) }
-                },
-                insertBelow: anchorBlock.map { block in
-                    { insertRow(relativeTo: block.id, after: true) }
-                },
-                requestDelete: anchorBlock.map { block in
-                    { blockPendingDeletion = block }
-                },
-                toggleTask: { id, value in
-                    persistTaskToggle(id: id, value: value, in: anchorBlock)
+            } else if blocks.isEmpty {
+                EmptyState(
+                    "还没有安排时间",
+                    message: "只添加真正想长期保留的时间段，空白本身也是计划的一部分。",
+                    actionTitle: "开始编辑"
+                ) { startEditing() }
+            } else {
+                ForEach(blocks) { block in
+                    ScheduleBlockRow(block: block, saveError: { errorMessage = $0 })
+                    QuietDivider()
                 }
-            )
+            }
         }
     }
 
@@ -243,124 +127,42 @@ struct ScheduleSection: View {
         }
     }
 
-    private func startEditing(_ block: ScheduleBlock) {
-        if activeDraft?.sourceBlockID == block.id { return }
-        guard finishEditing() else { return }
-        activeDraft = ScheduleBlockDraft(block: block)
-        draftInsertionIndex = nil
-        rowErrorMessage = nil
+    private func startEditing() {
+        guard let selectedTemplate else { return }
+        drafts = sortedBlocks(in: selectedTemplate).map(ScheduleBlockDraft.init(block:))
+        rowIssues = [:]
+        isEditing = true
     }
 
-    private func startNewRow(at index: Int) {
-        guard finishEditing(), let selectedTemplate else { return }
-        activeDraft = ScheduleBlockDraft()
-        draftInsertionIndex = min(max(0, index), sortedBlocks(in: selectedTemplate).count)
-        rowErrorMessage = nil
-    }
-
-    private func insertRow(relativeTo blockID: UUID, after: Bool) {
-        guard finishEditing(), let selectedTemplate else { return }
-        let blocks = sortedBlocks(in: selectedTemplate)
-        guard let index = blocks.firstIndex(where: { $0.id == blockID }) else { return }
-        startNewRow(at: index + (after ? 1 : 0))
-    }
-
-    @discardableResult
-    private func finishEditing() -> Bool {
-        guard let draft = activeDraft else { return true }
-        if draft.isBlankNewDraft {
-            cancelEditing()
-            return true
-        }
-        guard let template = selectedTemplate else { return false }
-
-        let block = draft.sourceBlockID.flatMap { id in
-            template.blocks.first(where: { $0.id == id })
-        }
-
+    private func finishEditing() {
+        guard let selectedTemplate else { return }
         do {
-            try ScheduleBlockWriter.commit(draft, block: block, template: template, in: modelContext)
-            activeDraft = nil
-            draftInsertionIndex = nil
-            rowErrorMessage = nil
-            return true
+            try ScheduleTableWriter.commit(drafts, template: selectedTemplate, in: modelContext)
+            drafts = []
+            rowIssues = [:]
+            isEditing = false
+        } catch let failure as ScheduleTableValidationFailure {
+            rowIssues = failure.issues
         } catch {
-            rowErrorMessage = error.localizedDescription
-            return false
+            errorMessage = error.localizedDescription
         }
     }
 
     private func cancelEditing() {
-        activeDraft = nil
-        draftInsertionIndex = nil
-        rowErrorMessage = nil
+        drafts = []
+        rowIssues = [:]
+        isEditing = false
     }
 
-    private func persistTaskToggle(id: UUID, value: Bool, in block: ScheduleBlock?) {
-        guard let item = block?.checklistItems.first(where: { $0.id == id }) else { return }
-        item.isCompleted = value
-        do {
-            try modelContext.save()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+    private func removeDraft(_ id: UUID) {
+        drafts.removeAll { $0.id == id }
+        rowIssues[id] = nil
     }
 
     private func ensureSelection() {
-        guard let selected = selectedTemplate else { return }
-        if selectedTemplateID != selected.id.uuidString {
-            selectedTemplateID = selected.id.uuidString
-        }
-    }
-
-    private func duplicate(_ template: ScheduleTemplate) {
-        do {
-            let copy = ScheduleTemplate(name: "\(template.name) 副本")
-            modelContext.insert(copy)
-            for block in template.blocks {
-                let blockCopy = ScheduleBlock(
-                    startMinute: block.startMinute,
-                    endMinute: block.endMinute,
-                    scope: block.scope
-                )
-                copy.blocks.append(blockCopy)
-                for item in block.checklistItems.sorted(by: { $0.sortOrder < $1.sortOrder }) {
-                    blockCopy.checklistItems.append(ScheduleChecklistItem(
-                        title: item.title,
-                        isCompleted: item.isCompleted,
-                        sortOrder: item.sortOrder
-                    ))
-                }
-            }
-            try modelContext.save()
-            selectedTemplateID = copy.id.uuidString
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func delete(_ template: ScheduleTemplate) {
-        guard templates.count > 1 else { return }
-        do {
-            modelContext.delete(template)
-            try modelContext.save()
-            templatePendingDeletion = nil
-            selectedTemplateID = templates.first(where: { $0.id != template.id })?.id.uuidString ?? ""
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func delete(_ block: ScheduleBlock) {
-        do {
-            if activeDraft?.sourceBlockID == block.id {
-                cancelEditing()
-            }
-            modelContext.delete(block)
-            try modelContext.save()
-            blockPendingDeletion = nil
-        } catch {
-            errorMessage = error.localizedDescription
+        guard let selectedTemplate else { return }
+        if selectedTemplateID != selectedTemplate.id.uuidString {
+            selectedTemplateID = selectedTemplate.id.uuidString
         }
     }
 }
@@ -373,6 +175,8 @@ private enum ScheduleTableMetrics {
 }
 
 private struct ScheduleTableHeader: View {
+    let isEditing: Bool
+
     var body: some View {
         Grid(horizontalSpacing: ScheduleTableMetrics.spacing) {
             GridRow {
@@ -382,7 +186,7 @@ private struct ScheduleTableHeader: View {
                     .frame(width: ScheduleTableMetrics.scopeWidth, alignment: .leading)
                 Text("具体任务")
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("操作")
+                Text(isEditing ? "操作" : "")
                     .frame(width: ScheduleTableMetrics.actionWidth, alignment: .trailing)
             }
             .font(.system(size: 11, weight: .semibold))
@@ -395,49 +199,39 @@ private struct ScheduleTableHeader: View {
 private struct ScheduleBlockRow: View {
     @Environment(\.modelContext) private var modelContext
     let block: ScheduleBlock
-    let edit: () -> Void
-    let insertAbove: () -> Void
-    let insertBelow: () -> Void
-    let requestDelete: () -> Void
     let saveError: (String) -> Void
 
     var body: some View {
         Grid(horizontalSpacing: ScheduleTableMetrics.spacing) {
             GridRow(alignment: .top) {
-                Button(action: edit) {
-                    Text("\(block.startMinute.clockText) – \(block.endMinute.clockText)")
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundStyle(CMTheme.textPrimary)
-                        .frame(width: ScheduleTableMetrics.timeWidth, alignment: .leading)
-                }
-                .buttonStyle(.plain)
+                Text("\(block.startMinute.clockText) – \(block.endMinute.clockText)")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(CMTheme.textPrimary)
+                    .frame(width: ScheduleTableMetrics.timeWidth, alignment: .leading)
 
-                Button(action: edit) {
-                    Group {
-                        if let scope = block.scope {
-                            HStack(spacing: 7) {
-                                Circle()
-                                    .fill(CMTheme.color(for: scope.colorKey))
-                                    .frame(width: 7, height: 7)
-                                Text(scope.name).lineLimit(2)
-                            }
-                        } else {
-                            Text("未填写")
-                                .foregroundStyle(CMTheme.textTertiary)
+                Group {
+                    if let scope = block.scope {
+                        HStack(spacing: 7) {
+                            Circle()
+                                .fill(CMTheme.color(for: scope.colorKey))
+                                .frame(width: 7, height: 7)
+                            Text(scope.name).lineLimit(2)
                         }
+                    } else {
+                        Text("未填写")
+                            .foregroundStyle(CMTheme.textTertiary)
                     }
-                    .font(.system(size: 13))
-                    .frame(width: ScheduleTableMetrics.scopeWidth, alignment: .leading)
                 }
-                .buttonStyle(.plain)
+                .font(.system(size: 13))
+                .frame(width: ScheduleTableMetrics.scopeWidth, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 9) {
                     let items = block.checklistItems.sorted { $0.sortOrder < $1.sortOrder }
                     if items.isEmpty {
-                        Button("添加具体任务", action: edit)
-                            .buttonStyle(.plain)
+                        Text("-")
                             .font(.system(size: 13))
                             .foregroundStyle(CMTheme.textTertiary)
+                            .accessibilityIdentifier("schedule-empty-tasks")
                     } else {
                         ForEach(items) { item in
                             HStack(spacing: 8) {
@@ -455,35 +249,19 @@ private struct ScheduleBlockRow: View {
                                 .labelsHidden()
                                 .toggleStyle(.checkbox)
 
-                                Button(action: edit) {
-                                    Text(item.title)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(item.isCompleted ? CMTheme.textTertiary : CMTheme.textPrimary)
-                                        .strikethrough(item.isCompleted, color: CMTheme.textTertiary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .buttonStyle(.plain)
+                                Text(item.title)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(item.isCompleted ? CMTheme.textTertiary : CMTheme.textPrimary)
+                                    .strikethrough(item.isCompleted, color: CMTheme.textTertiary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Menu {
-                    Button("编辑") { edit() }
-                    Divider()
-                    Button("在上方插入") { insertAbove() }
-                    Button("在下方插入") { insertBelow() }
-                    Divider()
-                    Button("删除时间块", role: .destructive) { requestDelete() }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .foregroundStyle(CMTheme.textSecondary)
-                        .frame(width: ScheduleTableMetrics.actionWidth, height: 24, alignment: .trailing)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .help("时间块操作")
+                Color.clear
+                    .frame(width: ScheduleTableMetrics.actionWidth, height: 1)
             }
         }
         .padding(.vertical, CMTheme.rowVerticalPadding)
@@ -501,16 +279,9 @@ private struct ScheduleEditingRow: View {
     @Binding var draft: ScheduleBlockDraft
     let scopes: [ScheduleScope]
     let errorMessage: String?
-    let isNew: Bool
-    let commit: () -> Void
-    let cancel: () -> Void
-    let insertAbove: (() -> Void)?
-    let insertBelow: (() -> Void)?
-    let requestDelete: (() -> Void)?
-    let toggleTask: (UUID, Bool) -> Void
+    let requestDelete: () -> Void
 
     @FocusState private var focusedField: Field?
-    @State private var suppressNextBlurCommit = false
 
     private var suggestions: [ScheduleScope] {
         let key = draft.scopeName.normalizedKey
@@ -532,18 +303,8 @@ private struct ScheduleEditingRow: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         TextField("例如：工作", text: $draft.scopeName)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 13))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 7)
-                            .background(CMTheme.cardSurface)
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .stroke(CMTheme.separator, lineWidth: 0.7)
-                            }
+                            .scheduleInputStyle()
                             .focused($focusedField, equals: .scope)
-                            .onSubmit(commit)
                             .accessibilityLabel("归属")
 
                         if focusedField == .scope && !suggestions.isEmpty {
@@ -557,8 +318,7 @@ private struct ScheduleEditingRow: View {
                                             Circle()
                                                 .fill(CMTheme.color(for: scope.colorKey))
                                                 .frame(width: 6, height: 6)
-                                            Text(scope.name)
-                                                .lineLimit(1)
+                                            Text(scope.name).lineLimit(1)
                                         }
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     }
@@ -575,9 +335,6 @@ private struct ScheduleEditingRow: View {
                                 Toggle("", isOn: $task.isCompleted)
                                     .labelsHidden()
                                     .toggleStyle(.checkbox)
-                                    .onChange(of: task.isCompleted) { _, value in
-                                        toggleTask(task.id, value)
-                                    }
 
                                 TextField("增加一项具体任务", text: $task.title)
                                     .textFieldStyle(.plain)
@@ -608,42 +365,13 @@ private struct ScheduleEditingRow: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack(spacing: 6) {
-                        Button(action: cancel) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(CMTheme.textTertiary)
-                        }
-                        .buttonStyle(.plain)
-                        .keyboardShortcut(.cancelAction)
-                        .help(isNew ? "取消新增（Esc）" : "取消编辑（Esc）")
-
-                        Menu {
-                            if let insertAbove {
-                                Button("在上方插入", action: insertAbove)
-                            }
-                            if let insertBelow {
-                                Button("在下方插入", action: insertBelow)
-                            }
-                            if insertAbove != nil || insertBelow != nil {
-                                Divider()
-                            }
-                            Button(isNew ? "取消新增" : "取消编辑", action: cancel)
-                            if let requestDelete {
-                                Divider()
-                                Button("删除时间块", role: .destructive, action: requestDelete)
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .foregroundStyle(CMTheme.textSecondary)
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .simultaneousGesture(TapGesture().onEnded {
-                            suppressNextBlurCommit = true
-                        })
+                    Button(role: .destructive, action: requestDelete) {
+                        Image(systemName: "trash")
+                            .foregroundStyle(CMTheme.textTertiary)
+                            .frame(width: ScheduleTableMetrics.actionWidth, height: 24, alignment: .trailing)
                     }
-                    .frame(width: ScheduleTableMetrics.actionWidth, height: 24, alignment: .trailing)
+                    .buttonStyle(.plain)
+                    .help("删除这行")
                 }
             }
 
@@ -659,29 +387,6 @@ private struct ScheduleEditingRow: View {
             }
         }
         .padding(.vertical, 12)
-        .onAppear {
-            Task { @MainActor in
-                await Task.yield()
-                focusedField = .start
-            }
-        }
-        .onChange(of: focusedField) { oldValue, newValue in
-            if case .task(let id) = oldValue, oldValue != newValue {
-                removeEmptyTaskIfNeeded(id)
-            }
-            guard oldValue != nil, newValue == nil else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(120))
-                if suppressNextBlurCommit {
-                    suppressNextBlurCommit = false
-                    return
-                }
-                if focusedField == nil {
-                    commit()
-                }
-            }
-        }
-        .onExitCommand(perform: cancel)
     }
 
     private func inlineTextField(
@@ -704,7 +409,6 @@ private struct ScheduleEditingRow: View {
                     .stroke(CMTheme.separator, lineWidth: 0.7)
             }
             .focused($focusedField, equals: field)
-            .onSubmit(commit)
             .accessibilityIdentifier(identifier)
     }
 
@@ -713,8 +417,6 @@ private struct ScheduleEditingRow: View {
         if draft.tasks[index].title.trimmed.isEmpty {
             if draft.tasks.count > 1 {
                 draft.tasks.remove(at: index)
-            } else {
-                commit()
             }
             return
         }
@@ -734,51 +436,19 @@ private struct ScheduleEditingRow: View {
             draft.tasks = [ScheduleTaskDraft()]
         }
     }
-
-    private func removeEmptyTaskIfNeeded(_ id: UUID) {
-        guard
-            draft.tasks.count > 1,
-            let task = draft.tasks.first(where: { $0.id == id }),
-            task.title.trimmed.isEmpty
-        else { return }
-        draft.tasks.removeAll { $0.id == id }
-    }
 }
 
-private struct TemplateNameSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let title: String
-    let onSave: (String) throws -> Void
-    @State private var name: String
-    @State private var errorMessage: String?
-
-    init(title: String, initialName: String, onSave: @escaping (String) throws -> Void) {
-        self.title = title
-        self.onSave = onSave
-        _name = State(initialValue: initialName)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            SheetHeader(title: title, subtitle: "例如：工作日、休息日、专注日")
-            TextField("模板名称", text: $name)
-                .calmTextField()
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.system(size: 12))
-                    .foregroundStyle(CMTheme.color(for: "clay"))
+private extension View {
+    func scheduleInputStyle() -> some View {
+        textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(CMTheme.cardSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(CMTheme.separator, lineWidth: 0.7)
             }
-            SheetFooter(canSave: !name.trimmed.isEmpty, cancel: { dismiss() }) {
-                do {
-                    try onSave(name.trimmed)
-                    dismiss()
-                } catch {
-                    errorMessage = error.localizedDescription
-                }
-            }
-        }
-        .padding(28)
-        .frame(width: 420)
-        .background(CMTheme.canvas)
     }
 }

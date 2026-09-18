@@ -45,13 +45,15 @@ struct RootView: View {
                     .tag(section)
                     .padding(.vertical, 4)
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 270)
+            .navigationSplitViewColumnWidth(min: 144, ideal: 152, max: 160)
             .listStyle(.sidebar)
             .safeAreaInset(edge: .bottom) {
-                Text("所有内容仅保存在这台 Mac")
+                Text("仅保存在本机")
                     .font(.system(size: 10))
                     .foregroundStyle(CMTheme.textTertiary)
+                    .lineLimit(1)
                     .padding(.vertical, 12)
+                    .help("所有内容仅保存在这台 Mac")
             }
         } detail: {
             Group {
@@ -92,6 +94,7 @@ struct RootView: View {
         .task {
             do {
                 try AppBootstrapper.ensureDefaultTemplate(in: modelContext)
+                try UITestFixtureSeeder.seedIfRequested(in: modelContext)
             } catch {
                 bootstrapError = error.localizedDescription
             }

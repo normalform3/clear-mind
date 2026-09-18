@@ -30,13 +30,6 @@ enum CMTheme {
         }
     }
 
-    static func statusColor(_ status: WorkstreamStatus) -> Color {
-        switch status {
-        case .planned: color(for: "slate")
-        case .inProgress: color(for: "denim")
-        case .completed: color(for: "sage")
-        }
-    }
 }
 
 struct QuietButtonStyle: ButtonStyle {

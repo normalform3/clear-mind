@@ -143,7 +143,7 @@ enum BackupService {
 
     static func summary(of data: Data) throws -> String {
         let envelope = try decode(data)
-        return "\(envelope.goals.count) 个长期目标、\(envelope.nearTermItems.count) 个近期事项、\(envelope.ideas.count) 条想法、\(envelope.scheduleTemplates.count) 个时间表模板"
+        return "\(envelope.goals.count) 个长期目标、\(envelope.nearTermItems.count) 个近期事项、\(envelope.ideas.count) 条想法、\(envelope.scheduleTemplates.count) 份时间表数据"
     }
 
     static func importData(_ data: Data, into context: ModelContext) throws {
@@ -238,7 +238,7 @@ enum BackupService {
 
     private static func validate(_ envelope: BackupEnvelope) throws {
         guard !envelope.scheduleTemplates.isEmpty else {
-            throw BackupError.invalidData("至少需要一个时间表模板。")
+            throw BackupError.invalidData("至少需要一份时间表数据。")
         }
 
         let tagIDs = Set(envelope.tags.map(\.id))
@@ -266,7 +266,7 @@ enum BackupService {
                     throw BackupError.invalidData("时间块引用了不存在的归属。")
                 }
                 if index > 0, sorted[index - 1].endMinute > block.startMinute {
-                    throw BackupError.invalidData("同一模板中存在重叠时间段。")
+                    throw BackupError.invalidData("时间表数据中存在重叠时间段。")
                 }
             }
         }

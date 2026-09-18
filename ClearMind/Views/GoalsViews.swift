@@ -4,12 +4,9 @@ import SwiftUI
 struct GoalsView: View {
     @Query(sort: \Goal.updatedAt, order: .reverse) private var goals: [Goal]
     @State private var showingNewGoal = false
-    @State private var statusFilter: GoalStatus? = .active
 
     private var visibleGoals: [Goal] {
-        goals.filter { goal in
-            !goal.isArchived && (statusFilter == nil || goal.status == statusFilter)
-        }
+        goals.filter { !$0.isArchived }
     }
 
     var body: some View {
@@ -27,21 +24,12 @@ struct GoalsView: View {
                         .buttonStyle(PrimaryButtonStyle())
                     }
 
-                    Picker("状态", selection: $statusFilter) {
-                        Text("进行中").tag(GoalStatus?.some(.active))
-                        Text("已暂停").tag(GoalStatus?.some(.paused))
-                        Text("已完成").tag(GoalStatus?.some(.completed))
-                        Text("全部").tag(GoalStatus?.none)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 360)
-
                     if visibleGoals.isEmpty {
                         IslandSection {
                             EmptyState(
-                                statusFilter == .active ? "还没有正在追求的长期目标" : "这里暂时没有内容",
+                                "还没有长期目标",
                                 message: "一个明确的方向就足够开始，不需要一次规划完所有事情。",
-                                actionTitle: statusFilter == .active ? "建立第一个目标" : nil
+                                actionTitle: "建立第一个目标"
                             ) { showingNewGoal = true }
                         }
                     } else {
@@ -54,7 +42,7 @@ struct GoalsView: View {
                                 NavigationLink {
                                     GoalDetailView(goal: goal)
                                 } label: {
-                                    GoalSummaryCard(goal: goal, showsDetails: true, showsStatus: true)
+                                    GoalSummaryCard(goal: goal, showsDetails: true)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -73,17 +61,16 @@ struct GoalsView: View {
 struct GoalDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var goal: Goal
-    @State private var showCompleted = false
-    @State private var zoom: TimelineZoom = .week
+    @State private var showCompletedMilestones = false
     @State private var editingGoal = false
     @State private var showingNewWorkstream = false
     @State private var showingNewMilestone = false
     @State private var editingWorkstream: Workstream?
     @State private var editingMilestone: Milestone?
+    @State private var timelineErrorMessage: String?
 
     private var displayedWorkstreams: [Workstream] {
         goal.workstreams
-            .filter { showCompleted || $0.status != .completed }
             .sorted { lhs, rhs in
                 lhs.startDate == rhs.startDate ? lhs.endDate < rhs.endDate : lhs.startDate < rhs.startDate
             }
@@ -94,10 +81,6 @@ struct GoalDetailView: View {
             VStack(alignment: .leading, spacing: 32) {
                 HStack(alignment: .top, spacing: 24) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(goal.status.title.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(1.2)
-                            .foregroundStyle(CMTheme.textTertiary)
                         Text(goal.title)
                             .font(.system(size: 29, weight: .semibold))
                         if !goal.details.trimmed.isEmpty {
@@ -141,17 +124,9 @@ struct GoalDetailView: View {
 
                     Spacer()
 
-                    Toggle("显示已完成", isOn: $showCompleted)
+                    Toggle("显示已完成里程碑", isOn: $showCompletedMilestones)
                         .toggleStyle(.checkbox)
                         .font(.system(size: 12))
-
-                    Picker("精度", selection: $zoom) {
-                        ForEach(TimelineZoom.allCases) { value in
-                            Text(value.title).tag(value)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 150)
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -160,12 +135,11 @@ struct GoalDetailView: View {
                     GoalTimelineView(
                         goal: goal,
                         workstreams: displayedWorkstreams,
-                        milestones: goal.milestones.filter { showCompleted || !$0.isCompleted },
-                        zoom: zoom,
+                        milestones: goal.milestones.filter { showCompletedMilestones || !$0.isCompleted },
                         onSelectWorkstream: { editingWorkstream = $0 },
-                        onSelectMilestone: { editingMilestone = $0 }
+                        onSelectMilestone: { editingMilestone = $0 },
+                        onUpdateWorkstreamRange: updateWorkstreamRange
                     )
-                    .frame(minHeight: 480)
                 }
 
                 goalItemsList
@@ -177,6 +151,28 @@ struct GoalDetailView: View {
         .sheet(isPresented: $showingNewMilestone) { MilestoneEditor(goal: goal) }
         .sheet(item: $editingWorkstream) { WorkstreamEditor(goal: goal, workstream: $0) }
         .sheet(item: $editingMilestone) { MilestoneEditor(goal: goal, milestone: $0) }
+        .alert("无法调整推进时间", isPresented: Binding(
+            get: { timelineErrorMessage != nil },
+            set: { if !$0 { timelineErrorMessage = nil } }
+        )) {
+            Button("好") { timelineErrorMessage = nil }
+        } message: {
+            Text(timelineErrorMessage ?? "请稍后重试，或打开推进项编辑器修改日期。")
+        }
+    }
+
+    private func updateWorkstreamRange(_ item: Workstream, startDate: Date, endDate: Date) {
+        item.startDate = startDate.startOfDay
+        item.endDate = endDate.startOfDay
+        item.updatedAt = .now
+        goal.updatedAt = .now
+
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            timelineErrorMessage = "日期没有保存：\(error.localizedDescription)"
+        }
     }
 
     private var goalItemsList: some View {
@@ -191,8 +187,6 @@ struct GoalDetailView: View {
                 ForEach(displayedWorkstreams) { item in
                     Button { editingWorkstream = item } label: {
                         HStack(spacing: 18) {
-                            WorkstreamStatusLabel(status: item.status)
-                                .frame(width: 78, alignment: .leading)
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(item.title)
                                     .font(.system(size: 14, weight: .medium))
@@ -228,7 +222,6 @@ struct GoalEditor: View {
     @State private var details: String
     @State private var startDate: Date
     @State private var endDate: Date
-    @State private var status: GoalStatus
     @State private var tagNames: String
     @State private var errorMessage: String?
 
@@ -238,7 +231,6 @@ struct GoalEditor: View {
         _details = State(initialValue: goal?.details ?? "")
         _startDate = State(initialValue: goal?.startDate ?? .now)
         _endDate = State(initialValue: goal?.endDate ?? Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now)
-        _status = State(initialValue: goal?.status ?? .active)
         _tagNames = State(initialValue: goal?.tags.map(\.name).joined(separator: ", ") ?? "")
     }
 
@@ -269,14 +261,8 @@ struct GoalEditor: View {
                 DatePicker("结束", selection: $endDate, displayedComponents: .date)
                 Spacer()
             }
-            HStack(spacing: 18) {
-                Picker("状态", selection: $status) {
-                    ForEach(GoalStatus.allCases) { Text($0.title).tag($0) }
-                }
-                .frame(width: 190)
-                TextField("标签，用逗号分隔", text: $tagNames)
-                    .calmTextField()
-            }
+            TextField("标签，用逗号分隔", text: $tagNames)
+                .calmTextField()
             if !GoalValidator.hasValidRange(startDate: startDate, endDate: endDate) {
                 Text("结束日期需要晚于或等于开始日期。")
                     .font(.system(size: 12))
@@ -305,7 +291,6 @@ struct GoalEditor: View {
             target.details = details.trimmed
             target.startDate = startDate.startOfDay
             target.endDate = endDate.startOfDay
-            target.status = status
             target.tags = tags
             target.updatedAt = .now
             if goal == nil { modelContext.insert(target) }
@@ -327,7 +312,6 @@ struct WorkstreamEditor: View {
     @State private var details: String
     @State private var startDate: Date
     @State private var endDate: Date
-    @State private var status: WorkstreamStatus
     @State private var extendGoal = false
     @State private var errorMessage: String?
 
@@ -338,7 +322,6 @@ struct WorkstreamEditor: View {
         _details = State(initialValue: workstream?.details ?? "")
         _startDate = State(initialValue: workstream?.startDate ?? max(goal.startDate, .now.startOfDay))
         _endDate = State(initialValue: workstream?.endDate ?? min(goal.endDate, Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? goal.endDate))
-        _status = State(initialValue: workstream?.status ?? .planned)
     }
 
     private var validRange: Bool { GoalValidator.hasValidRange(startDate: startDate, endDate: endDate) }
@@ -357,11 +340,6 @@ struct WorkstreamEditor: View {
                 DatePicker("结束", selection: $endDate, displayedComponents: .date)
                 Spacer()
             }
-            Picker("状态", selection: $status) {
-                ForEach(WorkstreamStatus.allCases) { Text($0.title).tag($0) }
-            }
-            .frame(width: 220)
-
             if validRange && !withinGoal {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("这段日期超出了目标周期（\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate)）。")
@@ -405,7 +383,6 @@ struct WorkstreamEditor: View {
             target.details = details.trimmed
             target.startDate = startDate.startOfDay
             target.endDate = endDate.startOfDay
-            target.status = status
             target.updatedAt = .now
             if workstream == nil { goal.workstreams.append(target) }
             goal.updatedAt = .now

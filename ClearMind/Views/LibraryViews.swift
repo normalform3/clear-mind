@@ -3,21 +3,13 @@ import SwiftUI
 
 struct NearTermView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \NearTermItem.reviewDate) private var allItems: [NearTermItem]
+    @Query(sort: \NearTermItem.updatedAt, order: .reverse) private var allItems: [NearTermItem]
     @State private var showingNewItem = false
     @State private var editingItem: NearTermItem?
     @State private var showArchived = false
 
     private var items: [NearTermItem] {
         allItems.filter { showArchived ? $0.isArchived : !$0.isArchived }
-    }
-
-    private var dueItems: [NearTermItem] {
-        items.filter { $0.reviewDate.startOfDay <= Date.now.startOfDay }
-    }
-
-    private var laterItems: [NearTermItem] {
-        items.filter { $0.reviewDate.startOfDay > Date.now.startOfDay }
     }
 
     var body: some View {
@@ -45,15 +37,8 @@ struct NearTermView: View {
                         message: "当一件事不能今天完成、又不想忘记时，再把它放到这里。",
                         actionTitle: showArchived ? nil : "添加近期事项"
                     ) { showingNewItem = true }
-                } else if showArchived {
-                        itemSection("已归档", items: items)
                 } else {
-                    if !dueItems.isEmpty {
-                        itemSection("该重新看看了", items: dueItems)
-                    }
-                    if !laterItems.isEmpty {
-                        itemSection("稍后再看", items: laterItems)
-                    }
+                    itemSection(showArchived ? "已归档" : "近期事项", items: items)
                 }
             }
         }
@@ -71,7 +56,7 @@ struct NearTermView: View {
                     ContentListRow(
                         title: item.title,
                         details: item.details,
-                        metadata: showArchived ? "已归档" : "\(item.reviewDate.compactChineseDate) 回看",
+                        metadata: showArchived ? "已归档" : nil,
                         tags: item.tags
                     )
                 }
@@ -80,11 +65,6 @@ struct NearTermView: View {
                     if item.isArchived {
                         Button("恢复") { item.isArchived = false; try? modelContext.save() }
                     } else {
-                        Menu("推迟回看") {
-                            Button("一周后") { postpone(item, days: 7) }
-                            Button("两周后") { postpone(item, days: 14) }
-                            Button("一个月后") { postpone(item, days: 30) }
-                        }
                         Button("转为想法") { convertToIdea(item) }
                         Button("转为长期目标") { convertToGoal(item) }
                         Divider()
@@ -94,12 +74,6 @@ struct NearTermView: View {
                 QuietDivider()
             }
         }
-    }
-
-    private func postpone(_ item: NearTermItem, days: Int) {
-        item.reviewDate = Calendar.current.date(byAdding: .day, value: days, to: .now)?.startOfDay ?? .now.startOfDay
-        item.updatedAt = .now
-        try? modelContext.save()
     }
 
     private func convertToIdea(_ item: NearTermItem) {
@@ -297,7 +271,7 @@ private struct InboxRow: View {
 private struct ContentListRow: View {
     let title: String
     let details: String
-    let metadata: String
+    let metadata: String?
     let tags: [Tag]
 
     var body: some View {
@@ -316,9 +290,11 @@ private struct ContentListRow: View {
                 TagPills(tags: tags)
             }
             Spacer()
-            Text(metadata)
-                .font(.system(size: 11))
-                .foregroundStyle(CMTheme.textSecondary)
+            if let metadata {
+                Text(metadata)
+                    .font(.system(size: 11))
+                    .foregroundStyle(CMTheme.textSecondary)
+            }
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(CMTheme.textTertiary)
@@ -335,7 +311,6 @@ struct NearTermEditor: View {
     let item: NearTermItem?
     @State private var title: String
     @State private var details: String
-    @State private var reviewDate: Date
     @State private var tagNames: String
     @State private var errorMessage: String?
 
@@ -343,24 +318,14 @@ struct NearTermEditor: View {
         self.item = item
         _title = State(initialValue: item?.title ?? "")
         _details = State(initialValue: item?.details ?? "")
-        _reviewDate = State(initialValue: item?.reviewDate ?? Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now)
         _tagNames = State(initialValue: item?.tags.map(\.name).joined(separator: ", ") ?? "")
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SheetHeader(title: item == nil ? "新建近期事项" : "编辑近期事项", subtitle: "回看日期不是截止日，只是让它在合适的时候重新出现。")
+            SheetHeader(title: item == nil ? "新建近期事项" : "编辑近期事项", subtitle: "把暂时不能处理、又不想忘记的事情安放在这里。")
             TextField("事项名称", text: $title).calmTextField()
             MultilineEditor(placeholder: "补充背景或想法（可选）", text: $details).frame(height: 105)
-            VStack(alignment: .leading, spacing: 9) {
-                DatePicker("下次回看", selection: $reviewDate, displayedComponents: .date)
-                HStack(spacing: 8) {
-                    ReviewDateButton("明天", days: 1, selection: $reviewDate)
-                    ReviewDateButton("一周", days: 7, selection: $reviewDate)
-                    ReviewDateButton("两周", days: 14, selection: $reviewDate)
-                    ReviewDateButton("一月", days: 30, selection: $reviewDate)
-                }
-            }
             TextField("标签，用逗号分隔", text: $tagNames).calmTextField()
             if let errorMessage { Text(errorMessage).font(.system(size: 12)).foregroundStyle(CMTheme.color(for: "clay")) }
             HStack {
@@ -384,36 +349,15 @@ struct NearTermEditor: View {
     private func save() {
         do {
             let tags = try TagService.resolve(commaSeparatedNames: tagNames, in: modelContext)
-            let target = item ?? NearTermItem(title: title.trimmed, reviewDate: reviewDate)
+            let target = item ?? NearTermItem(title: title.trimmed, reviewDate: .now)
             target.title = title.trimmed
             target.details = details.trimmed
-            target.reviewDate = reviewDate.startOfDay
             target.tags = tags
             target.updatedAt = .now
             if item == nil { modelContext.insert(target) }
             try modelContext.save()
             dismiss()
         } catch { errorMessage = error.localizedDescription }
-    }
-}
-
-private struct ReviewDateButton: View {
-    let title: String
-    let days: Int
-    @Binding var selection: Date
-
-    init(_ title: String, days: Int, selection: Binding<Date>) {
-        self.title = title
-        self.days = days
-        _selection = selection
-    }
-
-    var body: some View {
-        Button(title) {
-            selection = Calendar.current.date(byAdding: .day, value: days, to: .now)?.startOfDay ?? .now.startOfDay
-        }
-        .buttonStyle(QuietButtonStyle())
-        .foregroundStyle(CMTheme.textSecondary)
     }
 }
 

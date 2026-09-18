@@ -8,7 +8,7 @@ enum ScheduleValidationError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidRange: "结束时间需要晚于开始时间。"
-        case .overlaps: "这个时间段与模板中的其他安排重叠。"
+        case .overlaps: "这个时间段与时间表中的其他安排重叠。"
         }
     }
 }
@@ -111,6 +111,142 @@ struct ScheduleBlockDraft: Identifiable, Equatable {
     }
 }
 
+enum ScheduleTableValidationIssue: Equatable {
+    case invalidTime
+    case invalidRange
+    case overlaps
+    case missingSource
+
+    var message: String {
+        switch self {
+        case .invalidTime: "请使用 HH:mm 格式填写时间。"
+        case .invalidRange: "结束时间需要晚于开始时间。"
+        case .overlaps: "这个时间段与其他安排重叠。"
+        case .missingSource: "原时间块已不存在，请取消编辑后重试。"
+        }
+    }
+}
+
+struct ScheduleTableValidationFailure: LocalizedError, Equatable {
+    let issues: [UUID: ScheduleTableValidationIssue]
+
+    var errorDescription: String? {
+        issues.values.first?.message ?? "时间表包含无法保存的内容。"
+    }
+}
+
+@MainActor
+enum ScheduleTableWriter {
+    private struct ParsedDraft {
+        let draft: ScheduleBlockDraft
+        let startMinute: Int
+        let endMinute: Int
+    }
+
+    static func commit(
+        _ drafts: [ScheduleBlockDraft],
+        template: ScheduleTemplate,
+        in context: ModelContext
+    ) throws {
+        let activeDrafts = drafts.filter { !$0.isBlankNewDraft }
+        var parsedDrafts: [ParsedDraft] = []
+        var issues: [UUID: ScheduleTableValidationIssue] = [:]
+
+        for draft in activeDrafts {
+            do {
+                let startMinute = try ScheduleTimeParser.minutes(from: draft.startText, allowsEndOfDay: false)
+                let endMinute = try ScheduleTimeParser.minutes(from: draft.endText, allowsEndOfDay: true)
+                guard startMinute < endMinute else {
+                    issues[draft.id] = .invalidRange
+                    continue
+                }
+                if let sourceID = draft.sourceBlockID,
+                   !template.blocks.contains(where: { $0.id == sourceID }) {
+                    issues[draft.id] = .missingSource
+                    continue
+                }
+                parsedDrafts.append(ParsedDraft(
+                    draft: draft,
+                    startMinute: startMinute,
+                    endMinute: endMinute
+                ))
+            } catch {
+                issues[draft.id] = .invalidTime
+            }
+        }
+
+        for firstIndex in parsedDrafts.indices {
+            for secondIndex in parsedDrafts.indices where secondIndex > firstIndex {
+                let first = parsedDrafts[firstIndex]
+                let second = parsedDrafts[secondIndex]
+                if first.startMinute < second.endMinute && first.endMinute > second.startMinute {
+                    issues[first.draft.id] = .overlaps
+                    issues[second.draft.id] = .overlaps
+                }
+            }
+        }
+
+        guard issues.isEmpty else {
+            throw ScheduleTableValidationFailure(issues: issues)
+        }
+
+        let retainedIDs = Set(parsedDrafts.compactMap(\.draft.sourceBlockID))
+        let removedBlocks = template.blocks.filter { !retainedIDs.contains($0.id) }
+        template.blocks.removeAll { !retainedIDs.contains($0.id) }
+        for block in removedBlocks {
+            context.delete(block)
+        }
+
+        do {
+            for parsed in parsedDrafts {
+                let draft = parsed.draft
+                let target: ScheduleBlock
+                if let sourceID = draft.sourceBlockID,
+                   let existing = template.blocks.first(where: { $0.id == sourceID }) {
+                    target = existing
+                } else {
+                    target = ScheduleBlock(startMinute: parsed.startMinute, endMinute: parsed.endMinute)
+                    template.blocks.append(target)
+                }
+
+                target.startMinute = parsed.startMinute
+                target.endMinute = parsed.endMinute
+                target.scope = try ScopeService.resolve(name: draft.scopeName, in: context)
+                target.updatedAt = .now
+
+                let savedTasks = draft.tasks.filter { !$0.title.trimmed.isEmpty }
+                let savedTaskIDs = Set(savedTasks.map(\.id))
+                let removedTasks = target.checklistItems.filter { !savedTaskIDs.contains($0.id) }
+                target.checklistItems.removeAll { !savedTaskIDs.contains($0.id) }
+                for task in removedTasks {
+                    context.delete(task)
+                }
+
+                for (index, task) in savedTasks.enumerated() {
+                    if let existing = target.checklistItems.first(where: { $0.id == task.id }) {
+                        existing.title = task.title.trimmed
+                        existing.isCompleted = task.isCompleted
+                        existing.sortOrder = index
+                    } else {
+                        target.checklistItems.append(ScheduleChecklistItem(
+                            id: task.id,
+                            title: task.title.trimmed,
+                            isCompleted: task.isCompleted,
+                            sortOrder: index
+                        ))
+                    }
+                }
+            }
+
+            template.updatedAt = .now
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+}
+
 @MainActor
 enum ScheduleBlockWriter {
     @discardableResult
@@ -179,6 +315,165 @@ enum GoalValidator {
     }
 }
 
+enum TimelineResizeEdge: Equatable {
+    case start
+    case end
+}
+
+struct WorkstreamDateRange: Equatable {
+    let startDate: Date
+    let endDate: Date
+}
+
+struct WorkstreamResizeSession: Equatable {
+    let workstreamID: UUID
+    let edge: TimelineResizeEdge
+    let originalRange: WorkstreamDateRange
+    let startPointerY: CGFloat
+
+    func previewRange(
+        pointerY: CGFloat,
+        pointsPerDay: CGFloat,
+        goalStartDate: Date,
+        goalEndDate: Date,
+        calendar: Calendar = .current
+    ) -> WorkstreamDateRange {
+        WorkstreamTimelineLogic.resizedRange(
+            startDate: originalRange.startDate,
+            endDate: originalRange.endDate,
+            edge: edge,
+            verticalTranslation: pointerY - startPointerY,
+            pointsPerDay: pointsPerDay,
+            goalStartDate: goalStartDate,
+            goalEndDate: goalEndDate,
+            calendar: calendar
+        )
+    }
+}
+
+enum WorkstreamTimelineLogic {
+    static func current(
+        in workstreams: [Workstream],
+        on date: Date,
+        calendar: Calendar = .current
+    ) -> [Workstream] {
+        let day = calendar.startOfDay(for: date)
+        return workstreams
+            .filter {
+                calendar.startOfDay(for: $0.startDate) <= day
+                    && calendar.startOfDay(for: $0.endDate) >= day
+            }
+            .sorted { lhs, rhs in
+                let lhsStart = calendar.startOfDay(for: lhs.startDate)
+                let rhsStart = calendar.startOfDay(for: rhs.startDate)
+                if lhsStart == rhsStart {
+                    return calendar.startOfDay(for: lhs.endDate) < calendar.startOfDay(for: rhs.endDate)
+                }
+                return lhsStart < rhsStart
+            }
+    }
+
+    static func resizedRange(
+        startDate: Date,
+        endDate: Date,
+        edge: TimelineResizeEdge,
+        verticalTranslation: CGFloat,
+        pointsPerDay: CGFloat,
+        goalStartDate: Date,
+        goalEndDate: Date,
+        calendar: Calendar = .current
+    ) -> WorkstreamDateRange {
+        let start = calendar.startOfDay(for: startDate)
+        let end = calendar.startOfDay(for: endDate)
+        guard pointsPerDay > 0 else {
+            return WorkstreamDateRange(startDate: start, endDate: end)
+        }
+
+        let dayDelta = Int((verticalTranslation / pointsPerDay).rounded())
+        let movedDate = calendar.date(
+            byAdding: .day,
+            value: dayDelta,
+            to: edge == .start ? start : end
+        ) ?? (edge == .start ? start : end)
+        let goalStart = calendar.startOfDay(for: goalStartDate)
+        let goalEnd = calendar.startOfDay(for: goalEndDate)
+
+        switch edge {
+        case .start:
+            return WorkstreamDateRange(
+                startDate: max(goalStart, min(movedDate, end)),
+                endDate: end
+            )
+        case .end:
+            return WorkstreamDateRange(
+                startDate: start,
+                endDate: min(goalEnd, max(movedDate, start))
+            )
+        }
+    }
+}
+
+struct GoalCalendarDay: Equatable, Identifiable {
+    let date: Date
+    let isInDisplayedMonth: Bool
+    let isToday: Bool
+    let isCoveredByCurrentWorkstream: Bool
+
+    var id: Date { date }
+}
+
+enum GoalCalendarLogic {
+    static func remainingDays(
+        until endDate: Date,
+        from date: Date,
+        calendar: Calendar = .current
+    ) -> Int {
+        let start = calendar.startOfDay(for: date)
+        let end = calendar.startOfDay(for: endDate)
+        return max(0, calendar.dateComponents([.day], from: start, to: end).day ?? 0)
+    }
+
+    static func monthDays(
+        containing date: Date,
+        currentWorkstreams: [Workstream],
+        calendar: Calendar = .current
+    ) -> [GoalCalendarDay] {
+        let day = calendar.startOfDay(for: date)
+        let monthComponents = calendar.dateComponents([.year, .month], from: day)
+        guard let firstOfMonth = calendar.date(from: monthComponents) else { return [] }
+
+        let weekday = calendar.component(.weekday, from: firstOfMonth)
+        let daysSinceMonday = (weekday + 5) % 7
+        guard let gridStart = calendar.date(
+            byAdding: .day,
+            value: -daysSinceMonday,
+            to: firstOfMonth
+        ) else { return [] }
+
+        return (0..<42).compactMap { offset in
+            guard let gridDate = calendar.date(byAdding: .day, value: offset, to: gridStart) else {
+                return nil
+            }
+            let normalizedGridDate = calendar.startOfDay(for: gridDate)
+            let isInDisplayedMonth = calendar.isDate(
+                normalizedGridDate,
+                equalTo: firstOfMonth,
+                toGranularity: .month
+            )
+            return GoalCalendarDay(
+                date: normalizedGridDate,
+                isInDisplayedMonth: isInDisplayedMonth,
+                isToday: calendar.isDate(normalizedGridDate, inSameDayAs: day),
+                isCoveredByCurrentWorkstream: isInDisplayedMonth && currentWorkstreams.contains { workstream in
+                    let start = calendar.startOfDay(for: workstream.startDate)
+                    let end = calendar.startOfDay(for: workstream.endDate)
+                    return start <= normalizedGridDate && normalizedGridDate <= end
+                }
+            )
+        }
+    }
+}
+
 enum TimelineMath {
     static func dayOffset(from startDate: Date, to date: Date, calendar: Calendar = .current) -> Int {
         calendar.dateComponents([.day], from: startDate.startOfDay, to: date.startOfDay).day ?? 0
@@ -186,6 +481,84 @@ enum TimelineMath {
 
     static func inclusiveDayCount(from startDate: Date, to endDate: Date, calendar: Calendar = .current) -> Int {
         max(1, dayOffset(from: startDate, to: endDate, calendar: calendar) + 1)
+    }
+
+    static func monthTicks(from startDate: Date, to endDate: Date, calendar: Calendar = .current) -> [Date] {
+        let normalizedStart = calendar.startOfDay(for: startDate)
+        let normalizedEnd = calendar.startOfDay(for: endDate)
+        guard normalizedStart <= normalizedEnd else { return [] }
+
+        var ticks = [normalizedStart]
+        var cursor = calendar.date(from: calendar.dateComponents([.year, .month], from: normalizedStart))
+            ?? normalizedStart
+        if cursor <= normalizedStart {
+            cursor = calendar.date(byAdding: .month, value: 1, to: cursor) ?? normalizedEnd.addingTimeInterval(1)
+        }
+        while cursor <= normalizedEnd {
+            ticks.append(cursor)
+            cursor = calendar.date(byAdding: .month, value: 1, to: cursor) ?? normalizedEnd.addingTimeInterval(1)
+        }
+        return ticks
+    }
+
+    static func monthLabelTicks(
+        from startDate: Date,
+        to endDate: Date,
+        minimumSpacingDays: Int = 12,
+        calendar: Calendar = .current
+    ) -> [Date] {
+        monthTicks(from: startDate, to: endDate, calendar: calendar).reduce(into: []) { labels, tick in
+            guard let previous = labels.last else {
+                labels.append(tick)
+                return
+            }
+            if dayOffset(from: previous, to: tick, calendar: calendar) >= minimumSpacingDays {
+                labels.append(tick)
+            }
+        }
+    }
+
+    static func workstreamBarHeight(
+        durationDays: Int,
+        availableHeight: CGFloat,
+        pointsPerDay: CGFloat
+    ) -> CGFloat {
+        guard availableHeight > 0 else { return 0 }
+        let preferredHeight = max(36, CGFloat(max(1, durationDays)) * pointsPerDay - 5)
+        return min(preferredHeight, availableHeight)
+    }
+
+    static func contentHeight(
+        dayCount: Int,
+        headerHeight: CGFloat,
+        pointsPerDay: CGFloat,
+        bottomPadding: CGFloat
+    ) -> CGFloat {
+        headerHeight + CGFloat(max(1, dayCount)) * pointsPerDay + bottomPadding
+    }
+
+    static func viewportHeight(
+        for contentHeight: CGFloat,
+        minimum: CGFloat = 140,
+        maximum: CGFloat = 480
+    ) -> CGFloat {
+        min(maximum, max(minimum, contentHeight))
+    }
+
+    static func scrollContentHeight(
+        chartHeight: CGFloat,
+        viewportHeight: CGFloat,
+        todayY: CGFloat?
+    ) -> CGFloat {
+        guard chartHeight > viewportHeight, let todayY else { return chartHeight }
+        return max(chartHeight, todayY + viewportHeight)
+    }
+}
+
+enum ScheduleTemplateResolver {
+    static func canonical(from templates: [ScheduleTemplate], selectedID: String) -> ScheduleTemplate? {
+        templates.first(where: { $0.id.uuidString == selectedID })
+            ?? templates.min(by: { $0.createdAt < $1.createdAt })
     }
 }
 
