@@ -2,13 +2,13 @@ import SwiftData
 import SwiftUI
 
 struct DashboardView: View {
-    @Query(sort: \Goal.updatedAt, order: .reverse) private var goals: [Goal]
+    @Query private var goals: [Goal]
     @Query(sort: \NearTermItem.updatedAt, order: .reverse) private var nearTermItems: [NearTermItem]
 
     let onNavigate: (SidebarSection) -> Void
 
     private var activeGoals: [Goal] {
-        goals.filter { !$0.isArchived }
+        GoalOrderLogic.ordered(goals.filter { !$0.isArchived })
     }
 
     private var recentItems: [NearTermItem] {

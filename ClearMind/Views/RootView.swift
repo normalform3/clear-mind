@@ -95,6 +95,7 @@ struct RootView: View {
             do {
                 try AppBootstrapper.ensureDefaultTemplate(in: modelContext)
                 try UITestFixtureSeeder.seedIfRequested(in: modelContext)
+                try GoalOrderService.normalizeIfNeeded(in: modelContext)
             } catch {
                 bootstrapError = error.localizedDescription
             }

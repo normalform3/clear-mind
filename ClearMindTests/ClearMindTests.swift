@@ -266,6 +266,125 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(TimelineMath.inclusiveDayCount(from: start, to: end, calendar: calendar), 90)
     }
 
+    func testGoalOrderNormalizesLegacyDuplicatesUsingPreviousVisibleOrder() {
+        let earliest = Date(timeIntervalSince1970: 100)
+        let middle = Date(timeIntervalSince1970: 200)
+        let latest = Date(timeIntervalSince1970: 300)
+        let oldGoal = Goal(title: "较早", startDate: earliest, endDate: latest, updatedAt: earliest)
+        let middleGoal = Goal(title: "中间", startDate: earliest, endDate: latest, updatedAt: middle)
+        let recentGoal = Goal(title: "最近", startDate: earliest, endDate: latest, updatedAt: latest)
+
+        XCTAssertTrue(GoalOrderLogic.normalizeIfNeeded([oldGoal, recentGoal, middleGoal]))
+        XCTAssertEqual(
+            GoalOrderLogic.ordered([oldGoal, recentGoal, middleGoal]).map(\.title),
+            ["最近", "中间", "较早"]
+        )
+        XCTAssertEqual([recentGoal.sortOrder, middleGoal.sortOrder, oldGoal.sortOrder], [0, 1, 2])
+        XCTAssertFalse(GoalOrderLogic.normalizeIfNeeded([oldGoal, recentGoal, middleGoal]))
+    }
+
+    func testGoalOrderNormalizationPlacesActiveGoalsBeforeNewerArchivedGoals() {
+        let early = Date(timeIntervalSince1970: 100)
+        let late = Date(timeIntervalSince1970: 300)
+        let active = Goal(title: "进行中", startDate: early, endDate: late, updatedAt: early)
+        let archived = Goal(
+            title: "已归档",
+            startDate: early,
+            endDate: late,
+            isArchived: true,
+            updatedAt: late
+        )
+
+        XCTAssertTrue(GoalOrderLogic.normalizeIfNeeded([archived, active]))
+        XCTAssertEqual(GoalOrderLogic.ordered([archived, active]).map(\.title), ["进行中", "已归档"])
+        XCTAssertEqual([active.sortOrder, archived.sortOrder], [0, 1])
+    }
+
+    func testGoalOrderDoesNotChangeWhenAnExistingGoalIsEdited() {
+        let start = Date(timeIntervalSince1970: 100)
+        let end = Date(timeIntervalSince1970: 500)
+        let first = Goal(title: "第一", startDate: start, endDate: end, updatedAt: start, sortOrder: 0)
+        let second = Goal(title: "第二", startDate: start, endDate: end, updatedAt: end, sortOrder: 1)
+
+        first.updatedAt = Date(timeIntervalSince1970: 1_000)
+
+        XCTAssertEqual(GoalOrderLogic.ordered([second, first]).map(\.title), ["第一", "第二"])
+    }
+
+    func testGoalOrderPlacesNewGoalFirst() {
+        let start = Date(timeIntervalSince1970: 100)
+        let end = Date(timeIntervalSince1970: 500)
+        let first = Goal(title: "第一", startDate: start, endDate: end, sortOrder: 0)
+        let second = Goal(title: "第二", startDate: start, endDate: end, sortOrder: 1)
+        let newGoal = Goal(title: "新目标", startDate: start, endDate: end)
+
+        GoalOrderLogic.placeAtFront(newGoal, among: [first, second])
+
+        XCTAssertEqual(GoalOrderLogic.ordered([first, newGoal, second]).map(\.title), ["新目标", "第一", "第二"])
+        XCTAssertEqual([newGoal.sortOrder, first.sortOrder, second.sortOrder], [0, 1, 2])
+    }
+
+    func testGoalOrderAppliesActiveDraftBeforeArchivedGoals() {
+        let start = Date(timeIntervalSince1970: 100)
+        let end = Date(timeIntervalSince1970: 500)
+        let first = Goal(title: "第一", startDate: start, endDate: end, sortOrder: 0)
+        let second = Goal(title: "第二", startDate: start, endDate: end, sortOrder: 1)
+        let archived = Goal(title: "归档", startDate: start, endDate: end, isArchived: true, sortOrder: 2)
+
+        XCTAssertTrue(
+            GoalOrderLogic.applyActiveDraft(
+                [second.id, first.id],
+                to: [archived, first, second]
+            )
+        )
+        XCTAssertEqual(
+            GoalOrderLogic.ordered([archived, first, second]).map(\.title),
+            ["第二", "第一", "归档"]
+        )
+        XCTAssertEqual([second.sortOrder, first.sortOrder, archived.sortOrder], [0, 1, 2])
+    }
+
+    func testGoalOrderServiceArchivesGoalAfterRemainingActiveGoals() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let start = Date(timeIntervalSince1970: 100)
+        let end = Date(timeIntervalSince1970: 500)
+        let first = Goal(title: "第一", startDate: start, endDate: end, sortOrder: 0)
+        let second = Goal(title: "第二", startDate: start, endDate: end, sortOrder: 1)
+        context.insert(first)
+        context.insert(second)
+        try context.save()
+
+        try GoalOrderService.archive(first, in: context)
+
+        let restored = try context.fetch(FetchDescriptor<Goal>())
+        XCTAssertEqual(GoalOrderLogic.ordered(restored).map(\.title), ["第二", "第一"])
+        XCTAssertEqual([second.sortOrder, first.sortOrder], [0, 1])
+        XCTAssertTrue(first.isArchived)
+    }
+
+    func testGoalOrderMovesEarlierItemAfterDropTarget() {
+        let first = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let second = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let third = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+
+        XCTAssertEqual(
+            GoalOrderLogic.moving(first, on: third, in: [first, second, third]),
+            [second, third, first]
+        )
+    }
+
+    func testGoalOrderMovesLaterItemBeforeDropTarget() {
+        let first = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let second = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let third = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+
+        XCTAssertEqual(
+            GoalOrderLogic.moving(third, on: first, in: [first, second, third]),
+            [third, first, second]
+        )
+    }
+
     func testCurrentWorkstreamsIncludeStartAndEndDateBoundaries() {
         let calendar = Calendar.current
         let today = calendar.date(from: DateComponents(year: 2026, month: 4, day: 15))!
@@ -750,6 +869,7 @@ final class ClearMindTests: XCTestCase {
             startDate: .now,
             endDate: Calendar.current.date(byAdding: .month, value: 2, to: .now)!,
             status: .paused,
+            sortOrder: 7,
             tags: [tag]
         )
         let workstream = Workstream(
@@ -783,10 +903,58 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(try destination.mainContext.fetchCount(FetchDescriptor<Goal>()), 1)
         XCTAssertEqual(restoredGoal.tags.first?.name, "学习")
         XCTAssertEqual(restoredGoal.status, .paused)
+        XCTAssertEqual(restoredGoal.sortOrder, 7)
         XCTAssertEqual(restoredGoal.workstreams.first?.status, .inProgress)
         XCTAssertEqual(try destination.mainContext.fetchCount(FetchDescriptor<ScheduleTemplate>()), 2)
         let restoredNearTerm = try XCTUnwrap(destination.mainContext.fetch(FetchDescriptor<NearTermItem>()).first)
         XCTAssertEqual(restoredNearTerm.reviewDate, legacyReviewDate)
+    }
+
+    func testVersionOneBackupRestoresGoalsInPreviousVisibleOrder() throws {
+        let source = try makeContainer()
+        let early = Date(timeIntervalSince1970: 100)
+        let late = Date(timeIntervalSince1970: 300)
+        source.mainContext.insert(Goal(
+            title: "较早",
+            startDate: early,
+            endDate: late,
+            updatedAt: early,
+            sortOrder: 0
+        ))
+        source.mainContext.insert(Goal(
+            title: "最近",
+            startDate: early,
+            endDate: late,
+            updatedAt: late,
+            sortOrder: 1
+        ))
+        source.mainContext.insert(Goal(
+            title: "已归档",
+            startDate: early,
+            endDate: late,
+            isArchived: true,
+            updatedAt: Date(timeIntervalSince1970: 500),
+            sortOrder: 2
+        ))
+        source.mainContext.insert(ScheduleTemplate(name: "默认日"))
+        try source.mainContext.save()
+
+        let currentData = try BackupService.exportData(from: source.mainContext)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: currentData) as? [String: Any])
+        json["schemaVersion"] = 1
+        var goals = try XCTUnwrap(json["goals"] as? [[String: Any]])
+        for index in goals.indices {
+            goals[index].removeValue(forKey: "sortOrder")
+        }
+        json["goals"] = goals
+        let versionOneData = try JSONSerialization.data(withJSONObject: json)
+
+        let destination = try makeContainer()
+        try BackupService.importData(versionOneData, into: destination.mainContext)
+
+        let restored = try destination.mainContext.fetch(FetchDescriptor<Goal>())
+        XCTAssertEqual(GoalOrderLogic.ordered(restored).map(\.title), ["最近", "较早", "已归档"])
+        XCTAssertEqual(GoalOrderLogic.ordered(restored).map(\.sortOrder), [0, 1, 2])
     }
 
     func testBackupSummaryCallsLegacyTemplatesScheduleData() throws {

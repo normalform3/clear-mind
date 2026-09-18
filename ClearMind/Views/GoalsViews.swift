@@ -2,11 +2,21 @@ import SwiftData
 import SwiftUI
 
 struct GoalsView: View {
-    @Query(sort: \Goal.updatedAt, order: .reverse) private var goals: [Goal]
+    @Environment(\.modelContext) private var modelContext
+    @Query private var goals: [Goal]
     @State private var showingNewGoal = false
+    @State private var isReordering = false
+    @State private var reorderDraft: [UUID] = []
+    @State private var reorderErrorMessage: String?
 
     private var visibleGoals: [Goal] {
-        goals.filter { !$0.isArchived }
+        GoalOrderLogic.ordered(goals.filter { !$0.isArchived })
+    }
+
+    private var displayedGoals: [Goal] {
+        guard isReordering else { return visibleGoals }
+        let byID = Dictionary(uniqueKeysWithValues: visibleGoals.map { ($0.id, $0) })
+        return reorderDraft.compactMap { byID[$0] }
     }
 
     var body: some View {
@@ -16,12 +26,25 @@ struct GoalsView: View {
                     HStack(alignment: .bottom) {
                         PageHeader("长期目标")
                         Spacer()
-                        Button {
-                            showingNewGoal = true
-                        } label: {
-                            Label("新建目标", systemImage: "plus")
+                        if isReordering {
+                            Button("取消", action: cancelReordering)
+                                .buttonStyle(QuietButtonStyle())
+                            Button("完成", action: finishReordering)
+                                .buttonStyle(PrimaryButtonStyle())
+                                .accessibilityIdentifier("goal-reorder-finish")
+                        } else {
+                            if !visibleGoals.isEmpty {
+                                Button("排序", action: beginReordering)
+                                    .buttonStyle(QuietButtonStyle())
+                                    .accessibilityIdentifier("goal-reorder-start")
+                            }
+                            Button {
+                                showingNewGoal = true
+                            } label: {
+                                Label("新建目标", systemImage: "plus")
+                            }
+                            .buttonStyle(PrimaryButtonStyle())
                         }
-                        .buttonStyle(PrimaryButtonStyle())
                     }
 
                     if visibleGoals.isEmpty {
@@ -38,13 +61,18 @@ struct GoalsView: View {
                             alignment: .leading,
                             spacing: 18
                         ) {
-                            ForEach(visibleGoals) { goal in
-                                NavigationLink {
-                                    GoalDetailView(goal: goal)
-                                } label: {
-                                    GoalSummaryCard(goal: goal, showsDetails: true)
+                            ForEach(displayedGoals) { goal in
+                                if isReordering {
+                                    reorderCard(goal)
+                                } else {
+                                    NavigationLink {
+                                        GoalDetailView(goal: goal)
+                                    } label: {
+                                        GoalSummaryCard(goal: goal, showsDetails: true)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("goal-card-\(goal.id.uuidString)")
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -55,6 +83,85 @@ struct GoalsView: View {
         .sheet(isPresented: $showingNewGoal) {
             GoalEditor()
         }
+        .alert("无法保存目标顺序", isPresented: Binding(
+            get: { reorderErrorMessage != nil },
+            set: { if !$0 { reorderErrorMessage = nil } }
+        )) {
+            Button("好") { reorderErrorMessage = nil }
+        } message: {
+            Text(reorderErrorMessage ?? "请稍后重试。")
+        }
+    }
+
+    private func beginReordering() {
+        reorderDraft = visibleGoals.map(\.id)
+        isReordering = true
+    }
+
+    private func cancelReordering() {
+        reorderDraft = []
+        isReordering = false
+    }
+
+    private func finishReordering() {
+        do {
+            try GoalOrderService.commitActiveDraft(reorderDraft, in: modelContext)
+            reorderDraft = []
+            isReordering = false
+        } catch {
+            reorderErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func moveGoal(_ id: UUID, by offset: Int) {
+        guard let source = reorderDraft.firstIndex(of: id) else { return }
+        let destination = source + offset
+        guard reorderDraft.indices.contains(destination) else { return }
+        reorderDraft.swapAt(source, destination)
+    }
+
+    private func dropGoal(_ draggedID: UUID, on targetID: UUID) -> Bool {
+        let moved = GoalOrderLogic.moving(draggedID, on: targetID, in: reorderDraft)
+        guard moved != reorderDraft else { return false }
+        reorderDraft = moved
+        return true
+    }
+
+    private func reorderCard(_ goal: Goal) -> some View {
+        let index = reorderDraft.firstIndex(of: goal.id) ?? 0
+        return ZStack(alignment: .topTrailing) {
+            GoalSummaryCard(goal: goal, showsDetails: true)
+            HStack(spacing: 2) {
+                Button { moveGoal(goal.id, by: -1) } label: {
+                    Image(systemName: "arrow.up")
+                }
+                .disabled(index == 0)
+                .help("前移")
+                .accessibilityLabel("前移\(goal.title)")
+
+                Button { moveGoal(goal.id, by: 1) } label: {
+                    Image(systemName: "arrow.down")
+                }
+                .disabled(index >= reorderDraft.count - 1)
+                .help("后移")
+                .accessibilityLabel("后移\(goal.title)")
+
+                Image(systemName: "line.3.horizontal")
+                    .foregroundStyle(CMTheme.textSecondary)
+                    .padding(7)
+                    .accessibilityHidden(true)
+            }
+            .buttonStyle(QuietButtonStyle())
+            .padding(8)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .draggable(goal.id.uuidString)
+        .dropDestination(for: String.self) { values, _ in
+            guard let rawID = values.first, let draggedID = UUID(uuidString: rawID) else { return false }
+            return dropGoal(draggedID, on: goal.id)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(goal.title)，排序位置第 \(index + 1) 位")
     }
 }
 
@@ -68,6 +175,8 @@ struct GoalDetailView: View {
     @State private var editingWorkstream: Workstream?
     @State private var editingMilestone: Milestone?
     @State private var timelineErrorMessage: String?
+    @State private var goalActionErrorMessage: String?
+    @State private var isEditingTimeline = false
 
     private var displayedWorkstreams: [Workstream] {
         goal.workstreams
@@ -95,10 +204,7 @@ struct GoalDetailView: View {
                     Spacer()
                     Menu {
                         Button("编辑目标") { editingGoal = true }
-                        Button("归档目标") {
-                            goal.isArchived = true
-                            try? modelContext.save()
-                        }
+                        Button("归档目标", action: archiveGoal)
                     } label: {
                         Image(systemName: "ellipsis")
                             .frame(width: 28, height: 24)
@@ -130,12 +236,26 @@ struct GoalDetailView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionHeading("推进时间图", trailingText: "\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate)")
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        Text("推进时间图")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text("\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate)")
+                            .font(.system(size: 12))
+                            .foregroundStyle(CMTheme.textSecondary)
+                        Spacer()
+                        Button(isEditingTimeline ? "完成" : "编辑时间") {
+                            isEditingTimeline.toggle()
+                        }
+                        .buttonStyle(QuietButtonStyle())
+                        .foregroundStyle(CMTheme.textSecondary)
+                        .accessibilityIdentifier("timeline-edit-toggle")
+                    }
                     QuietDivider()
                     GoalTimelineView(
                         goal: goal,
                         workstreams: displayedWorkstreams,
                         milestones: goal.milestones.filter { showCompletedMilestones || !$0.isCompleted },
+                        allowsRangeEditing: isEditingTimeline,
                         onSelectWorkstream: { editingWorkstream = $0 },
                         onSelectMilestone: { editingMilestone = $0 },
                         onUpdateWorkstreamRange: updateWorkstreamRange
@@ -158,6 +278,22 @@ struct GoalDetailView: View {
             Button("好") { timelineErrorMessage = nil }
         } message: {
             Text(timelineErrorMessage ?? "请稍后重试，或打开推进项编辑器修改日期。")
+        }
+        .alert("无法归档目标", isPresented: Binding(
+            get: { goalActionErrorMessage != nil },
+            set: { if !$0 { goalActionErrorMessage = nil } }
+        )) {
+            Button("好") { goalActionErrorMessage = nil }
+        } message: {
+            Text(goalActionErrorMessage ?? "请稍后重试。")
+        }
+    }
+
+    private func archiveGoal() {
+        do {
+            try GoalOrderService.archive(goal, in: modelContext)
+        } catch {
+            goalActionErrorMessage = error.localizedDescription
         }
     }
 
@@ -293,10 +429,11 @@ struct GoalEditor: View {
             target.endDate = endDate.startOfDay
             target.tags = tags
             target.updatedAt = .now
-            if goal == nil { modelContext.insert(target) }
+            if goal == nil { try GoalOrderService.insertAtFront(target, in: modelContext) }
             try modelContext.save()
             dismiss()
         } catch {
+            modelContext.rollback()
             errorMessage = error.localizedDescription
         }
     }

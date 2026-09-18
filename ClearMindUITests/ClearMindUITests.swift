@@ -10,7 +10,11 @@ final class ClearMindUITests: XCTestCase {
         let dateLabel = app.staticTexts["dashboard-date"]
 
         XCTAssertTrue(dateLabel.waitForExistence(timeout: 5))
-        XCTAssertTrue(dateLabel.label.contains(expectedDate))
+        let displayedDate = try XCTUnwrap(dateLabel.value as? String)
+        XCTAssertEqual(
+            displayedDate.filter { !$0.isWhitespace },
+            expectedDate.filter { !$0.isWhitespace }
+        )
         XCTAssertFalse(app.staticTexts["都已经安顿好了"].exists)
         XCTAssertTrue(app.staticTexts["收集箱"].exists, "侧边栏收集箱入口应保留。")
         XCTAssertFalse(app.buttons["打开"].exists, "安心总览不应显示收集箱区块的打开按钮。")
@@ -84,17 +88,18 @@ final class ClearMindUITests: XCTestCase {
             app.scrollViews.firstMatch.swipeUp()
         }
         XCTAssertTrue(calendar.waitForExistence(timeout: 3))
-        XCTAssertTrue((calendar.value as? String)?.contains("处于1个推进项") == true)
+        XCTAssertTrue(calendar.label.contains("处于1个推进项"))
 
         let workstream = app.descendants(matching: .any)[
             "current-workstream-22222222-2222-2222-2222-222222222222-summary"
         ]
         XCTAssertTrue(workstream.waitForExistence(timeout: 2))
         XCTAssertTrue(workstream.label.contains("还剩 10 天"))
+        XCTAssertLessThan(workstream.frame.minY, calendar.frame.minY, "当前推进应显示在月历上方。")
     }
 
     @MainActor
-    func testTimelineEndHandleDragChangesDateWithoutOpeningEditor() throws {
+    func testTimelineEditingModeControlsHandlesAndBarStillOpensEditor() throws {
         let app = launchApp(arguments: ["--uitesting-goal-fixture"])
 
         let sidebarGoals = app.staticTexts["长期目标"].firstMatch
@@ -102,31 +107,32 @@ final class ClearMindUITests: XCTestCase {
         sidebarGoals.click()
         XCTAssertFalse(app.descendants(matching: .any)["goal-progress-calendar"].exists)
 
-        let goal = app.staticTexts["UI 测试目标"].firstMatch
+        let goal = app.buttons["goal-card-11111111-1111-1111-1111-111111111111"]
         XCTAssertTrue(goal.waitForExistence(timeout: 2))
         goal.click()
 
         let handle = app.descendants(matching: .any)[
             "timeline-22222222-2222-2222-2222-222222222222-end-handle"
         ]
+        XCTAssertFalse(handle.exists, "时间图默认应为只读状态。")
+
+        let editTimelineButton = app.buttons["timeline-edit-toggle"]
+        XCTAssertTrue(editTimelineButton.waitForExistence(timeout: 2))
+        XCTAssertEqual(editTimelineButton.label, "编辑时间")
+        editTimelineButton.click()
+
         XCTAssertTrue(handle.waitForExistence(timeout: 3))
-        let originalValue = try XCTUnwrap(handle.value as? String)
+        XCTAssertNotNil(handle.value as? String)
 
-        let start = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let finish = start.withOffset(CGVector(dx: 0, dy: 16))
-        start.press(forDuration: 0.35, thenDragTo: finish)
+        editTimelineButton.click()
+        XCTAssertFalse(handle.exists, "退出时间编辑后应再次隐藏拖拽把手。")
 
-        let valueChanged = XCTNSPredicateExpectation(
-            predicate: NSPredicate { object, _ in
-                guard let element = object as? XCUIElement else { return false }
-                return (element.value as? String) != originalValue
-            },
-            object: handle
-        )
-        XCTAssertEqual(XCTWaiter.wait(for: [valueChanged], timeout: 2), .completed)
-        XCTAssertFalse(
-            app.staticTexts["并行的小目标会在时间图中各自占据一条泳道。"].exists,
-            "拖动把手不应触发推进条的点击编辑。"
+        let bar = app.buttons["timeline-22222222-2222-2222-2222-222222222222-bar"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 2))
+        bar.click()
+        XCTAssertTrue(
+            app.staticTexts["并行的小目标会在时间图中各自占据一条泳道。"].waitForExistence(timeout: 2),
+            "只读模式下点击推进条仍应打开精确编辑表单。"
         )
     }
 
@@ -137,4 +143,5 @@ final class ClearMindUITests: XCTestCase {
         app.launch()
         return app
     }
+
 }

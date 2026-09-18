@@ -7,6 +7,7 @@ struct NearTermView: View {
     @State private var showingNewItem = false
     @State private var editingItem: NearTermItem?
     @State private var showArchived = false
+    @State private var conversionErrorMessage: String?
 
     private var items: [NearTermItem] {
         allItems.filter { showArchived ? $0.isArchived : !$0.isArchived }
@@ -44,6 +45,14 @@ struct NearTermView: View {
         }
         .sheet(isPresented: $showingNewItem) { NearTermEditor() }
         .sheet(item: $editingItem) { NearTermEditor(item: $0) }
+        .alert("无法建立长期目标", isPresented: Binding(
+            get: { conversionErrorMessage != nil },
+            set: { if !$0 { conversionErrorMessage = nil } }
+        )) {
+            Button("好") { conversionErrorMessage = nil }
+        } message: {
+            Text(conversionErrorMessage ?? "请稍后重试。")
+        }
     }
 
     @ViewBuilder
@@ -84,9 +93,15 @@ struct NearTermView: View {
 
     private func convertToGoal(_ item: NearTermItem) {
         let end = Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now
-        modelContext.insert(Goal(title: item.title, details: item.details, startDate: .now, endDate: end, tags: item.tags))
-        item.isArchived = true
-        try? modelContext.save()
+        let goal = Goal(title: item.title, details: item.details, startDate: .now, endDate: end, tags: item.tags)
+        do {
+            try GoalOrderService.insertAtFront(goal, in: modelContext)
+            item.isArchived = true
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            conversionErrorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -96,6 +111,7 @@ struct IdeasView: View {
     @State private var showingNewIdea = false
     @State private var editingIdea: Idea?
     @State private var showArchived = false
+    @State private var conversionErrorMessage: String?
 
     private var ideas: [Idea] {
         allIdeas.filter { showArchived ? $0.isArchived : !$0.isArchived }
@@ -154,6 +170,14 @@ struct IdeasView: View {
         }
         .sheet(isPresented: $showingNewIdea) { IdeaEditor() }
         .sheet(item: $editingIdea) { IdeaEditor(idea: $0) }
+        .alert("无法建立长期目标", isPresented: Binding(
+            get: { conversionErrorMessage != nil },
+            set: { if !$0 { conversionErrorMessage = nil } }
+        )) {
+            Button("好") { conversionErrorMessage = nil }
+        } message: {
+            Text(conversionErrorMessage ?? "请稍后重试。")
+        }
     }
 
     private func convertToNearTerm(_ idea: Idea) {
@@ -164,9 +188,15 @@ struct IdeasView: View {
 
     private func convertToGoal(_ idea: Idea) {
         let end = Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now
-        modelContext.insert(Goal(title: idea.title, details: idea.details, startDate: .now, endDate: end, tags: idea.tags))
-        idea.isArchived = true
-        try? modelContext.save()
+        let goal = Goal(title: idea.title, details: idea.details, startDate: .now, endDate: end, tags: idea.tags)
+        do {
+            try GoalOrderService.insertAtFront(goal, in: modelContext)
+            idea.isArchived = true
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            conversionErrorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -217,6 +247,7 @@ struct InboxView: View {
 private struct InboxRow: View {
     @Environment(\.modelContext) private var modelContext
     let entry: InboxEntry
+    @State private var conversionErrorMessage: String?
 
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
@@ -240,6 +271,14 @@ private struct InboxRow: View {
             .fixedSize()
         }
         .padding(.vertical, CMTheme.rowVerticalPadding)
+        .alert("无法建立长期目标", isPresented: Binding(
+            get: { conversionErrorMessage != nil },
+            set: { if !$0 { conversionErrorMessage = nil } }
+        )) {
+            Button("好") { conversionErrorMessage = nil }
+        } message: {
+            Text(conversionErrorMessage ?? "请稍后重试。")
+        }
     }
 
     private var parsed: (title: String, details: String) {
@@ -258,8 +297,15 @@ private struct InboxRow: View {
 
     private func convertToGoal() {
         let end = Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now
-        modelContext.insert(Goal(title: parsed.title, details: parsed.details, startDate: .now, endDate: end))
-        delete()
+        let goal = Goal(title: parsed.title, details: parsed.details, startDate: .now, endDate: end)
+        do {
+            try GoalOrderService.insertAtFront(goal, in: modelContext)
+            modelContext.delete(entry)
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            conversionErrorMessage = error.localizedDescription
+        }
     }
 
     private func delete() {

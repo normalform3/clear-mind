@@ -14,7 +14,8 @@ enum BackupError: LocalizedError {
 }
 
 struct BackupEnvelope: Codable {
-    static let currentVersion = 1
+    static let currentVersion = 2
+    static let supportedVersions = 1...currentVersion
 
     let schemaVersion: Int
     let exportedAt: Date
@@ -45,6 +46,7 @@ struct GoalRecord: Codable {
     let isArchived: Bool
     let createdAt: Date
     let updatedAt: Date
+    let sortOrder: Int?
     let tagIDs: [UUID]
     let workstreams: [WorkstreamRecord]
     let milestones: [MilestoneRecord]
@@ -163,7 +165,7 @@ enum BackupService {
 
     private static func makeEnvelope(from context: ModelContext) throws -> BackupEnvelope {
         let tags = try context.fetch(FetchDescriptor<Tag>())
-        let goals = try context.fetch(FetchDescriptor<Goal>())
+        let goals = GoalOrderLogic.ordered(try context.fetch(FetchDescriptor<Goal>()))
         let nearTerm = try context.fetch(FetchDescriptor<NearTermItem>())
         let ideas = try context.fetch(FetchDescriptor<Idea>())
         let inbox = try context.fetch(FetchDescriptor<InboxEntry>())
@@ -185,6 +187,7 @@ enum BackupService {
                     isArchived: goal.isArchived,
                     createdAt: goal.createdAt,
                     updatedAt: goal.updatedAt,
+                    sortOrder: goal.sortOrder,
                     tagIDs: goal.tags.map(\.id),
                     workstreams: goal.workstreams.map {
                         WorkstreamRecord(id: $0.id, title: $0.title, details: $0.details, startDate: $0.startDate, endDate: $0.endDate, statusRaw: $0.statusRaw, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
@@ -230,7 +233,7 @@ enum BackupService {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let envelope = try decoder.decode(BackupEnvelope.self, from: data)
-        guard envelope.schemaVersion == BackupEnvelope.currentVersion else {
+        guard BackupEnvelope.supportedVersions.contains(envelope.schemaVersion) else {
             throw BackupError.unsupportedVersion(envelope.schemaVersion)
         }
         return envelope
@@ -297,6 +300,7 @@ enum BackupService {
             scopeMap[record.id] = scope
         }
 
+        var restoredGoals: [Goal] = []
         for record in envelope.goals {
             let goal = Goal(
                 id: record.id,
@@ -308,9 +312,11 @@ enum BackupService {
                 isArchived: record.isArchived,
                 createdAt: record.createdAt,
                 updatedAt: record.updatedAt,
+                sortOrder: record.sortOrder ?? 0,
                 tags: record.tagIDs.compactMap { tagMap[$0] }
             )
             context.insert(goal)
+            restoredGoals.append(goal)
             for item in record.workstreams {
                 goal.workstreams.append(Workstream(
                     id: item.id,
@@ -327,6 +333,7 @@ enum BackupService {
                 goal.milestones.append(Milestone(id: item.id, title: item.title, details: item.details, date: item.date, isCompleted: item.isCompleted, createdAt: item.createdAt))
             }
         }
+        GoalOrderLogic.normalizeIfNeeded(restoredGoals)
 
         for record in envelope.nearTermItems {
             context.insert(NearTermItem(

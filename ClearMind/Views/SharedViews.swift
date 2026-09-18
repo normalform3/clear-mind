@@ -229,8 +229,7 @@ struct GoalProgressCalendar: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(monthTitle)日历")
-        .accessibilityValue(accessibilitySummary)
+        .accessibilityLabel("\(monthTitle)日历，\(accessibilitySummary)")
         .accessibilityIdentifier("goal-progress-calendar")
     }
 
@@ -324,11 +323,6 @@ struct GoalSummaryCard: View {
 
             QuietDivider()
 
-            if showsProgressCalendar {
-                GoalProgressCalendar(currentWorkstreams: currentWorkstreams)
-                QuietDivider()
-            }
-
             VStack(alignment: .leading, spacing: 7) {
                 Text("当前推进")
                     .font(.system(size: 10, weight: .semibold))
@@ -343,6 +337,11 @@ struct GoalSummaryCard: View {
                         workstreamRow(workstream)
                     }
                 }
+            }
+
+            if showsProgressCalendar {
+                QuietDivider()
+                GoalProgressCalendar(currentWorkstreams: currentWorkstreams)
             }
 
             if let nextMilestone {

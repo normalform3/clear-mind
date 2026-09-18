@@ -67,6 +67,7 @@ final class Goal {
     var isArchived: Bool
     var createdAt: Date
     var updatedAt: Date
+    var sortOrder: Int = 0
     var tags: [Tag]
 
     @Relationship(deleteRule: .cascade, inverse: \Workstream.goal)
@@ -93,6 +94,7 @@ final class Goal {
         isArchived: Bool = false,
         createdAt: Date = .now,
         updatedAt: Date = .now,
+        sortOrder: Int = 0,
         tags: [Tag] = []
     ) {
         self.id = id
@@ -104,6 +106,7 @@ final class Goal {
         self.isArchived = isArchived
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.sortOrder = sortOrder
         self.tags = tags
         self.workstreams = []
         self.milestones = []

@@ -315,6 +315,144 @@ enum GoalValidator {
     }
 }
 
+enum GoalOrderLogic {
+    static func ordered(_ goals: [Goal]) -> [Goal] {
+        goals.sorted { lhs, rhs in
+            if lhs.sortOrder != rhs.sortOrder {
+                return lhs.sortOrder < rhs.sortOrder
+            }
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
+
+    @discardableResult
+    static func normalizeIfNeeded(_ goals: [Goal]) -> Bool {
+        let currentOrder = ordered(goals)
+        let hasDuplicateOrder = Set(goals.map(\.sortOrder)).count != goals.count
+        var hasSeenArchivedGoal = false
+        let hasActiveGoalAfterArchivedGoal = currentOrder.contains { goal in
+            if goal.isArchived {
+                hasSeenArchivedGoal = true
+                return false
+            }
+            return hasSeenArchivedGoal
+        }
+        guard hasDuplicateOrder || hasActiveGoalAfterArchivedGoal else { return false }
+
+        let active = ordered(goals.filter { !$0.isArchived })
+        let archived = ordered(goals.filter(\.isArchived))
+        for (index, goal) in (active + archived).enumerated() {
+            goal.sortOrder = index
+        }
+        return true
+    }
+
+    static func placeAtFront(_ goal: Goal, among goals: [Goal]) {
+        let existingActive = ordered(goals.filter { $0.id != goal.id && !$0.isArchived })
+        let archived = ordered(goals.filter { $0.id != goal.id && $0.isArchived })
+        goal.sortOrder = 0
+        for (index, item) in (existingActive + archived).enumerated() {
+            item.sortOrder = index + 1
+        }
+    }
+
+    static func moving(_ draggedID: UUID, on targetID: UUID, in ids: [UUID]) -> [UUID] {
+        guard draggedID != targetID,
+              let source = ids.firstIndex(of: draggedID),
+              let target = ids.firstIndex(of: targetID) else { return ids }
+        var result = ids
+        result.remove(at: source)
+        guard let adjustedTarget = result.firstIndex(of: targetID) else { return ids }
+        let destination = source < target ? adjustedTarget + 1 : adjustedTarget
+        result.insert(draggedID, at: min(destination, result.count))
+        return result
+    }
+
+    @discardableResult
+    static func applyActiveDraft(_ activeIDs: [UUID], to goals: [Goal]) -> Bool {
+        let active = goals.filter { !$0.isArchived }
+        guard activeIDs.count == active.count,
+              Set(activeIDs).count == activeIDs.count,
+              Set(activeIDs) == Set(active.map(\.id)) else { return false }
+
+        let byID = Dictionary(uniqueKeysWithValues: active.map { ($0.id, $0) })
+        let orderedActive = activeIDs.compactMap { byID[$0] }
+        let archived = ordered(goals.filter(\.isArchived))
+        for (index, goal) in (orderedActive + archived).enumerated() {
+            goal.sortOrder = index
+        }
+        return true
+    }
+}
+
+enum GoalOrderError: LocalizedError {
+    case invalidDraft
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidDraft: "目标列表已经发生变化，请取消排序后重试。"
+        }
+    }
+}
+
+@MainActor
+enum GoalOrderService {
+    static func normalizeIfNeeded(in context: ModelContext) throws {
+        let goals = try context.fetch(FetchDescriptor<Goal>())
+        if GoalOrderLogic.normalizeIfNeeded(goals) {
+            do {
+                try context.save()
+            } catch {
+                context.rollback()
+                throw error
+            }
+        }
+    }
+
+    static func insertAtFront(_ goal: Goal, in context: ModelContext) throws {
+        let goals = try context.fetch(FetchDescriptor<Goal>())
+        GoalOrderLogic.placeAtFront(goal, among: goals)
+        context.insert(goal)
+    }
+
+    static func commitActiveDraft(_ activeIDs: [UUID], in context: ModelContext) throws {
+        let goals = try context.fetch(FetchDescriptor<Goal>())
+        guard GoalOrderLogic.applyActiveDraft(activeIDs, to: goals) else {
+            throw GoalOrderError.invalidDraft
+        }
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    static func archive(_ goal: Goal, in context: ModelContext) throws {
+        let goals = try context.fetch(FetchDescriptor<Goal>())
+        guard let target = goals.first(where: { $0.id == goal.id }) else {
+            throw GoalOrderError.invalidDraft
+        }
+        target.isArchived = true
+        let activeIDs = GoalOrderLogic.ordered(goals.filter { !$0.isArchived }).map(\.id)
+        guard GoalOrderLogic.applyActiveDraft(activeIDs, to: goals) else {
+            throw GoalOrderError.invalidDraft
+        }
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+}
+
 enum TimelineResizeEdge: Equatable {
     case start
     case end

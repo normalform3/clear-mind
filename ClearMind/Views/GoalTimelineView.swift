@@ -4,6 +4,7 @@ struct GoalTimelineView: View {
     let goal: Goal
     let workstreams: [Workstream]
     let milestones: [Milestone]
+    var allowsRangeEditing = false
     let onSelectWorkstream: (Workstream) -> Void
     let onSelectMilestone: (Milestone) -> Void
     let onUpdateWorkstreamRange: (Workstream, Date, Date) -> Void
@@ -76,6 +77,7 @@ struct GoalTimelineView: View {
                             laneWidth: laneWidth,
                             headerHeight: headerHeight,
                             height: timelineHeight,
+                            allowsRangeEditing: allowsRangeEditing,
                             onSelectWorkstream: onSelectWorkstream,
                             onSelectMilestone: onSelectMilestone,
                             onUpdateWorkstreamRange: onUpdateWorkstreamRange
@@ -165,6 +167,7 @@ private struct TimelineLanes: View {
     let laneWidth: CGFloat
     let headerHeight: CGFloat
     let height: CGFloat
+    let allowsRangeEditing: Bool
     let onSelectWorkstream: (Workstream) -> Void
     let onSelectMilestone: (Milestone) -> Void
     let onUpdateWorkstreamRange: (Workstream, Date, Date) -> Void
@@ -279,15 +282,20 @@ private struct TimelineLanes: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(item.title)，\(range.startDate.compactChineseDate) 至 \(range.endDate.compactChineseDate)")
+            .accessibilityIdentifier("timeline-\(item.id.uuidString)-bar")
 
-            VStack(spacing: 0) {
-                resizeHandle(item, edge: .start, date: range.startDate, color: color)
-                Spacer(minLength: 0)
-                resizeHandle(item, edge: .end, date: range.endDate, color: color)
+            if allowsRangeEditing {
+                VStack(spacing: 0) {
+                    resizeHandle(item, edge: .start, date: range.startDate, color: color)
+                    Spacer(minLength: 0)
+                    resizeHandle(item, edge: .end, date: range.endDate, color: color)
+                }
+                .frame(width: laneWidth - 12, height: barHeight)
             }
-            .frame(width: laneWidth - 12, height: barHeight)
 
-            if let resizePreview, resizePreview.workstreamID == item.id {
+            if allowsRangeEditing,
+               let resizePreview,
+               resizePreview.workstreamID == item.id {
                 let date = resizePreview.edge == .start
                     ? resizePreview.range.startDate
                     : resizePreview.range.endDate
