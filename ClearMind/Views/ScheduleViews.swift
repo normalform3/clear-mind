@@ -20,7 +20,7 @@ struct ScheduleSection: View {
         DashboardIslandSection {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .center, spacing: 12) {
-                    Text("一天的时间分配")
+                    Text("时间表")
                         .font(.system(size: 19, weight: .semibold))
 
                     Spacer()

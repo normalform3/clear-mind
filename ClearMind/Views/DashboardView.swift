@@ -18,14 +18,26 @@ struct DashboardView: View {
     var body: some View {
         PageContainer {
             VStack(alignment: .leading, spacing: 46) {
-                Text(Date.now.formatted(
-                    .dateTime.year().month().day().weekday(.wide).locale(Locale(identifier: "zh_CN"))
-                ))
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(1.4)
-                .foregroundStyle(CMTheme.textTertiary)
-                .padding(.bottom, 8)
-                .accessibilityIdentifier("dashboard-date")
+                TimelineView(.everyMinute) { context in
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        Text(context.date.formatted(
+                            .dateTime.year().month().day().weekday(.wide).locale(Locale(identifier: "zh_CN"))
+                        ))
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(1.4)
+                        .foregroundStyle(CMTheme.textTertiary)
+                        .accessibilityIdentifier("dashboard-date")
+
+                        Spacer()
+
+                        Text(clockText(for: context.date))
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(CMTheme.textPrimary)
+                            .monospacedDigit()
+                            .accessibilityIdentifier("dashboard-time")
+                    }
+                    .padding(.bottom, 8)
+                }
 
                 ScheduleSection()
 
@@ -33,6 +45,15 @@ struct DashboardView: View {
                 DashboardIslandSection { nearTermSection }
             }
         }
+    }
+
+    private func clockText(for date: Date) -> String {
+        let calendar = Calendar.current
+        return String(
+            format: "%02d:%02d",
+            calendar.component(.hour, from: date),
+            calendar.component(.minute, from: date)
+        )
     }
 
     private var dashboardGoals: some View {

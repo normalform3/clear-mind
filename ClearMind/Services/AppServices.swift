@@ -612,6 +612,131 @@ enum GoalCalendarLogic {
     }
 }
 
+struct GoalPlanSpan: Equatable {
+    let start: Double
+    let width: Double
+}
+
+struct GoalPlanFocus {
+    enum State: Equatable {
+        case empty
+        case upcoming
+        case current
+        case gap
+        case ended
+    }
+
+    let state: State
+    let current: [Workstream]
+    let next: Workstream?
+}
+
+enum GoalPlanOverviewLogic {
+    static let monthLabelWidth: CGFloat = 64
+
+    static func span(
+        from startDate: Date,
+        to endDate: Date,
+        goalStart: Date,
+        goalEnd: Date,
+        calendar: Calendar = .current
+    ) -> GoalPlanSpan {
+        let totalDays = Double(TimelineMath.inclusiveDayCount(from: goalStart, to: goalEnd, calendar: calendar))
+        let startDay = Double(TimelineMath.dayOffset(from: goalStart, to: startDate, calendar: calendar))
+        let endDay = Double(TimelineMath.dayOffset(from: goalStart, to: endDate, calendar: calendar) + 1)
+        let start = min(1, max(0, startDay / totalDays))
+        let end = min(1, max(start, endDay / totalDays))
+        return GoalPlanSpan(start: start, width: end - start)
+    }
+
+    static func elapsedFraction(
+        goalStart: Date,
+        goalEnd: Date,
+        on date: Date,
+        calendar: Calendar = .current
+    ) -> Double {
+        let totalDays = Double(TimelineMath.inclusiveDayCount(from: goalStart, to: goalEnd, calendar: calendar))
+        let elapsedDays = Double(TimelineMath.dayOffset(from: goalStart, to: date, calendar: calendar)) + 0.5
+        return min(1, max(0, elapsedDays / totalDays))
+    }
+
+    static func progressText(
+        goalStart: Date,
+        goalEnd: Date,
+        on date: Date,
+        calendar: Calendar = .current
+    ) -> String {
+        let day = calendar.startOfDay(for: date)
+        if day < calendar.startOfDay(for: goalStart) {
+            let days = TimelineMath.dayOffset(from: day, to: goalStart, calendar: calendar)
+            return "距开始 " + String(days) + " 天"
+        }
+        if day > calendar.startOfDay(for: goalEnd) { return "计划周期已结束" }
+
+        let totalDays = TimelineMath.inclusiveDayCount(from: goalStart, to: goalEnd, calendar: calendar)
+        let currentDay = TimelineMath.dayOffset(from: goalStart, to: day, calendar: calendar) + 1
+        let percent = Int((elapsedFraction(
+            goalStart: goalStart, goalEnd: goalEnd, on: day, calendar: calendar
+        ) * 100).rounded())
+        return "第 " + String(currentDay) + " / " + String(totalDays)
+            + " 天 · 周期位置 " + String(percent) + "%"
+    }
+
+    static func focus(
+        workstreams: [Workstream],
+        goalStart: Date,
+        goalEnd: Date,
+        on date: Date,
+        calendar: Calendar = .current
+    ) -> GoalPlanFocus {
+        guard !workstreams.isEmpty else {
+            return GoalPlanFocus(state: .empty, current: [], next: nil)
+        }
+
+        let day = calendar.startOfDay(for: date)
+        let next = workstreams
+            .filter { calendar.startOfDay(for: $0.startDate) > day }
+            .min { lhs, rhs in
+                lhs.startDate == rhs.startDate ? lhs.endDate < rhs.endDate : lhs.startDate < rhs.startDate
+            }
+        if day < calendar.startOfDay(for: goalStart) {
+            return GoalPlanFocus(state: .upcoming, current: [], next: next)
+        }
+        if day > calendar.startOfDay(for: goalEnd) {
+            return GoalPlanFocus(state: .ended, current: [], next: nil)
+        }
+
+        let current = WorkstreamTimelineLogic.current(in: workstreams, on: day, calendar: calendar)
+        if !current.isEmpty {
+            return GoalPlanFocus(state: .current, current: current, next: next)
+        }
+        return GoalPlanFocus(state: .gap, current: [], next: next)
+    }
+
+    static func monthTicks(
+        goalStart: Date,
+        goalEnd: Date,
+        width: CGFloat,
+        minimumSpacing: CGFloat = 70,
+        calendar: Calendar = .current
+    ) -> [Date] {
+        let ticks = TimelineMath.monthTicks(from: goalStart, to: goalEnd, calendar: calendar)
+        let totalDays = CGFloat(TimelineMath.inclusiveDayCount(from: goalStart, to: goalEnd, calendar: calendar))
+        var lastPosition = -CGFloat.infinity
+        return ticks.filter { tick in
+            let position = CGFloat(TimelineMath.dayOffset(from: goalStart, to: tick, calendar: calendar)) / totalDays * width
+            guard position + monthLabelWidth <= width else { return false }
+            guard position - lastPosition >= minimumSpacing else { return false }
+            lastPosition = position
+            return true
+        }
+    }
+
+    static func monthLabel(for date: Date, calendar: Calendar = .current) -> String {
+        "\(calendar.component(.year, from: date))/\(calendar.component(.month, from: date))"
+    }
+}
+
 enum TimelineMath {
     static func dayOffset(from startDate: Date, to date: Date, calendar: Calendar = .current) -> Int {
         calendar.dateComponents([.day], from: startDate.startOfDay, to: date.startOfDay).day ?? 0

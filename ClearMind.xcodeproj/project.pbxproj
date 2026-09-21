@@ -17,6 +17,7 @@
 		A10000000000000000000009 /* ScheduleViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* ScheduleViews.swift */; };
 		A1000000000000000000000A /* GoalsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* GoalsViews.swift */; };
 		A1000000000000000000000B /* GoalTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* GoalTimelineView.swift */; };
+		A10000000000000000000010 /* GoalPlanOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* GoalPlanOverviewView.swift */; };
 		A1000000000000000000000C /* LibraryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* LibraryViews.swift */; };
 		A1000000000000000000000D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* SettingsView.swift */; };
 		A1000000000000000000000E /* ClearMindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* ClearMindTests.swift */; };
@@ -52,6 +53,7 @@
 		B10000000000000000000009 /* ScheduleViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleViews.swift; sourceTree = "<group>"; };
 		B1000000000000000000000A /* GoalsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalsViews.swift; sourceTree = "<group>"; };
 		B1000000000000000000000B /* GoalTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalTimelineView.swift; sourceTree = "<group>"; };
+		B10000000000000000000015 /* GoalPlanOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalPlanOverviewView.swift; sourceTree = "<group>"; };
 		B1000000000000000000000C /* LibraryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViews.swift; sourceTree = "<group>"; };
 		B1000000000000000000000D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B1000000000000000000000E /* ClearMindTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClearMindTests.swift; sourceTree = "<group>"; };
@@ -96,7 +98,7 @@
 		};
 		D10000000000000000000004 /* Models */ = {isa = PBXGroup; children = (B10000000000000000000002 /* AppModels.swift */,); path = Models; sourceTree = "<group>"; };
 		D10000000000000000000005 /* Services */ = {isa = PBXGroup; children = (B10000000000000000000004 /* AppServices.swift */, B10000000000000000000005 /* BackupService.swift */,); path = Services; sourceTree = "<group>"; };
-		D10000000000000000000006 /* Views */ = {isa = PBXGroup; children = (B10000000000000000000006 /* RootView.swift */, B10000000000000000000007 /* SharedViews.swift */, B10000000000000000000008 /* DashboardView.swift */, B10000000000000000000009 /* ScheduleViews.swift */, B1000000000000000000000A /* GoalsViews.swift */, B1000000000000000000000B /* GoalTimelineView.swift */, B1000000000000000000000C /* LibraryViews.swift */, B1000000000000000000000D /* SettingsView.swift */,); path = Views; sourceTree = "<group>"; };
+		D10000000000000000000006 /* Views */ = {isa = PBXGroup; children = (B10000000000000000000006 /* RootView.swift */, B10000000000000000000007 /* SharedViews.swift */, B10000000000000000000008 /* DashboardView.swift */, B10000000000000000000009 /* ScheduleViews.swift */, B1000000000000000000000A /* GoalsViews.swift */, B1000000000000000000000B /* GoalTimelineView.swift */, B10000000000000000000015 /* GoalPlanOverviewView.swift */, B1000000000000000000000C /* LibraryViews.swift */, B1000000000000000000000D /* SettingsView.swift */,); path = Views; sourceTree = "<group>"; };
 		D10000000000000000000007 /* Support */ = {isa = PBXGroup; children = (B10000000000000000000003 /* AppTheme.swift */,); path = Support; sourceTree = "<group>"; };
 		D10000000000000000000008 /* ClearMindTests */ = {isa = PBXGroup; children = (B1000000000000000000000E /* ClearMindTests.swift */,); path = ClearMindTests; sourceTree = "<group>"; };
 		D10000000000000000000009 /* Products */ = {isa = PBXGroup; children = (B10000000000000000000010 /* ClearMind.app */, B10000000000000000000011 /* ClearMindTests.xctest */, B10000000000000000000014 /* ClearMindUITests.xctest */,); name = Products; sourceTree = "<group>"; };
@@ -163,7 +165,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		F10000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000C, A1000000000000000000000D,); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A, A1000000000000000000000B, A10000000000000000000010, A1000000000000000000000C, A1000000000000000000000D,); runOnlyForDeploymentPostprocessing = 0; };
 		F10000000000000000000004 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000000E,); runOnlyForDeploymentPostprocessing = 0; };
 		F10000000000000000000008 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000000F,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */

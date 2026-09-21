@@ -509,7 +509,7 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(GoalCalendarLogic.remainingDays(until: nextMonth, from: monthEnd, calendar: calendar), 2)
     }
 
-    func testUITestGoalFixtureSeedsOneCurrentWorkstreamIdempotently() throws {
+    func testUITestGoalFixtureSeedsPlanWithOneCurrentWorkstreamIdempotently() throws {
         let container = try makeContainer()
         let context = container.mainContext
         let calendar = Calendar.current
@@ -520,10 +520,12 @@ final class ClearMindTests: XCTestCase {
 
         let goals = try context.fetch(FetchDescriptor<Goal>())
         let goal = try XCTUnwrap(goals.first)
-        let workstream = try XCTUnwrap(goal.workstreams.first)
+        let workstream = try XCTUnwrap(goal.workstreams.first(where: { $0.id == UITestFixtureSeeder.workstreamID }))
         XCTAssertEqual(goals.count, 1)
         XCTAssertEqual(goal.id, UITestFixtureSeeder.goalID)
-        XCTAssertEqual(goal.workstreams.count, 1)
+        XCTAssertEqual(goal.workstreams.count, 3)
+        XCTAssertEqual(goal.milestones.count, 1)
+        XCTAssertEqual(WorkstreamTimelineLogic.current(in: goal.workstreams, on: referenceDate).map(\.id), [workstream.id])
         XCTAssertEqual(workstream.id, UITestFixtureSeeder.workstreamID)
         XCTAssertEqual(
             workstream.startDate,
@@ -556,6 +558,145 @@ final class ClearMindTests: XCTestCase {
 
         XCTAssertEqual(result.startDate, calendar.date(from: DateComponents(year: 2026, month: 1, day: 12)))
         XCTAssertEqual(result.endDate, end)
+    }
+
+    func testPlanOverviewSpansUseInclusiveCalendarDaysWithoutInflatingShortItems() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 4, day: 10))!
+        let itemStart = calendar.date(from: DateComponents(year: 2026, month: 1, day: 26))!
+        let itemEnd = calendar.date(from: DateComponents(year: 2026, month: 2, day: 14))!
+
+        let span = GoalPlanOverviewLogic.span(
+            from: itemStart, to: itemEnd, goalStart: start, goalEnd: end, calendar: calendar
+        )
+        XCTAssertEqual(span.start, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(span.width, 0.20, accuracy: 0.0001)
+
+        let lastDay = GoalPlanOverviewLogic.span(
+            from: end, to: end, goalStart: start, goalEnd: end, calendar: calendar
+        )
+        XCTAssertEqual(lastDay.start, 0.99, accuracy: 0.0001)
+        XCTAssertEqual(lastDay.width, 0.01, accuracy: 0.0001)
+        XCTAssertEqual(
+            GoalPlanOverviewLogic.elapsedFraction(
+                goalStart: start, goalEnd: end, on: itemStart, calendar: calendar
+            ),
+            0.255,
+            accuracy: 0.0001
+        )
+    }
+
+    func testPlanOverviewProgressTextShowsFutureCountdownAndCentersCurrentDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 9, day: 20))!
+        let twoDaysBefore = calendar.date(from: DateComponents(year: 2026, month: 9, day: 18))!
+
+        XCTAssertEqual(
+            GoalPlanOverviewLogic.progressText(
+                goalStart: start, goalEnd: start, on: twoDaysBefore, calendar: calendar
+            ),
+            "距开始 2 天"
+        )
+        XCTAssertEqual(
+            GoalPlanOverviewLogic.elapsedFraction(
+                goalStart: start, goalEnd: start, on: start, calendar: calendar
+            ),
+            0.5,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            GoalPlanOverviewLogic.progressText(
+                goalStart: start, goalEnd: start, on: start, calendar: calendar
+            ),
+            "第 1 / 1 天 · 周期位置 50%"
+        )
+    }
+
+    func testPlanOverviewFocusHandlesParallelItemsGapsAndGoalBoundaries() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        func day(_ number: Int) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: 9, day: number))!
+        }
+        let first = Workstream(title: "第一项", startDate: day(3), endDate: day(12))
+        let second = Workstream(title: "第二项", startDate: day(8), endDate: day(16))
+        let later = Workstream(title: "下一项", startDate: day(22), endDate: day(27))
+        let items = [later, second, first]
+
+        let before = GoalPlanOverviewLogic.focus(
+            workstreams: items, goalStart: day(1), goalEnd: day(30), on: day(1).addingTimeInterval(-86400), calendar: calendar
+        )
+        XCTAssertEqual(before.state, .upcoming)
+        XCTAssertEqual(before.next?.title, "第一项")
+
+        let current = GoalPlanOverviewLogic.focus(
+            workstreams: items, goalStart: day(1), goalEnd: day(30), on: day(10), calendar: calendar
+        )
+        XCTAssertEqual(current.state, .current)
+        XCTAssertEqual(current.current.map(\.title), ["第一项", "第二项"])
+
+        let gap = GoalPlanOverviewLogic.focus(
+            workstreams: items, goalStart: day(1), goalEnd: day(30), on: day(19), calendar: calendar
+        )
+        XCTAssertEqual(gap.state, .gap)
+        XCTAssertEqual(gap.next?.title, "下一项")
+
+        let ended = GoalPlanOverviewLogic.focus(
+            workstreams: items, goalStart: day(1), goalEnd: day(30), on: day(30).addingTimeInterval(86400), calendar: calendar
+        )
+        XCTAssertEqual(ended.state, .ended)
+
+        let empty = GoalPlanOverviewLogic.focus(
+            workstreams: [], goalStart: day(1), goalEnd: day(30), on: day(10), calendar: calendar
+        )
+        XCTAssertEqual(empty.state, .empty)
+    }
+
+    func testPlanOverviewMonthLabelsThinOutWhenWidthIsConstrained() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 12, day: 31))!
+
+        let narrow = GoalPlanOverviewLogic.monthTicks(
+            goalStart: start, goalEnd: end, width: 400, calendar: calendar
+        )
+        let wide = GoalPlanOverviewLogic.monthTicks(
+            goalStart: start, goalEnd: end, width: 900, calendar: calendar
+        )
+        XCTAssertEqual(narrow.first, start)
+        XCTAssertGreaterThan(wide.count, narrow.count)
+        XCTAssertTrue(zip(narrow, narrow.dropFirst()).allSatisfy { lhs, rhs in
+            let days = TimelineMath.dayOffset(from: lhs, to: rhs, calendar: calendar)
+            return Double(days) / 365 * 400 >= 70
+        })
+    }
+
+    func testPlanOverviewMonthLabelDoesNotGroupTheYearDigits() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = calendar.date(from: DateComponents(year: 2026, month: 8, day: 4))!
+        XCTAssertEqual(GoalPlanOverviewLogic.monthLabel(for: date, calendar: calendar), "2026/8")
+    }
+
+    func testPlanOverviewMonthLabelsDoNotOverlapAtRightEdge() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 10, day: 27))!
+        let october = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1))!
+
+        let ticks = GoalPlanOverviewLogic.monthTicks(
+            goalStart: start, goalEnd: end, width: 700, calendar: calendar
+        )
+        XCTAssertFalse(ticks.contains(october))
+        XCTAssertTrue(ticks.allSatisfy { tick in
+            let days = calendar.dateComponents([.day], from: start, to: tick).day!
+            return Double(days) / 300 * 700 + 64 <= 700
+        })
     }
 
     func testTimelineResizeSessionUsesFixedPointerOriginForEveryPreview() {

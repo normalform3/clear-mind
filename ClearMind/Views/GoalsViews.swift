@@ -251,15 +251,25 @@ struct GoalDetailView: View {
                         .accessibilityIdentifier("timeline-edit-toggle")
                     }
                     QuietDivider()
-                    GoalTimelineView(
-                        goal: goal,
-                        workstreams: displayedWorkstreams,
-                        milestones: goal.milestones.filter { showCompletedMilestones || !$0.isCompleted },
-                        allowsRangeEditing: isEditingTimeline,
-                        onSelectWorkstream: { editingWorkstream = $0 },
-                        onSelectMilestone: { editingMilestone = $0 },
-                        onUpdateWorkstreamRange: updateWorkstreamRange
-                    )
+                    if isEditingTimeline {
+                        GoalTimelineView(
+                            goal: goal,
+                            workstreams: displayedWorkstreams,
+                            milestones: goal.milestones.filter { showCompletedMilestones || !$0.isCompleted },
+                            allowsRangeEditing: true,
+                            onSelectWorkstream: { editingWorkstream = $0 },
+                            onSelectMilestone: { editingMilestone = $0 },
+                            onUpdateWorkstreamRange: updateWorkstreamRange
+                        )
+                    } else {
+                        GoalPlanOverviewView(
+                            goal: goal,
+                            workstreams: displayedWorkstreams,
+                            milestones: goal.milestones.filter { showCompletedMilestones || !$0.isCompleted },
+                            onSelectWorkstream: { editingWorkstream = $0 },
+                            onSelectMilestone: { editingMilestone = $0 }
+                        )
+                    }
                 }
 
                 goalItemsList

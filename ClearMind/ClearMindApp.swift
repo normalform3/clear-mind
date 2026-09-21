@@ -9,6 +9,8 @@ extension Notification.Name {
 enum UITestFixtureSeeder {
     static let goalID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
     static let workstreamID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+    static let earlierWorkstreamID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+    static let laterWorkstreamID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
 
     static func seedIfRequested(in context: ModelContext) throws {
         let arguments = ProcessInfo.processInfo.arguments
@@ -38,7 +40,24 @@ enum UITestFixtureSeeder {
             startDate: calendar.date(byAdding: .day, value: -5, to: day) ?? day,
             endDate: calendar.date(byAdding: .day, value: 10, to: day) ?? day
         )
-        goal.workstreams.append(workstream)
+        let earlier = Workstream(
+            id: earlierWorkstreamID,
+            title: "前期梳理",
+            startDate: calendar.date(byAdding: .day, value: -35, to: day) ?? day,
+            endDate: calendar.date(byAdding: .day, value: -12, to: day) ?? day
+        )
+        let later = Workstream(
+            id: laterWorkstreamID,
+            title: "交付收尾",
+            startDate: calendar.date(byAdding: .day, value: 8, to: day) ?? day,
+            endDate: calendar.date(byAdding: .day, value: 35, to: day) ?? day
+        )
+        let milestone = Milestone(
+            title: "首版完成",
+            date: calendar.date(byAdding: .day, value: 15, to: day) ?? day
+        )
+        goal.workstreams.append(contentsOf: [earlier, workstream, later])
+        goal.milestones.append(milestone)
         context.insert(goal)
         try context.save()
     }
