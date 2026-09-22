@@ -438,6 +438,28 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(result.map(\.title), ["更早开始", "同日起步，较早结束", "同日起步，较晚结束"])
     }
 
+    func testNextWorkstreamUsesEarliestFutureStartThenEarliestEnd() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        func day(_ number: Int) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: 9, day: number))!
+        }
+        let past = Workstream(title: "已经开始", startDate: day(8), endDate: day(18))
+        let startsToday = Workstream(title: "今天开始", startDate: day(10), endDate: day(20))
+        let laterEnd = Workstream(title: "同日较晚结束", startDate: day(14), endDate: day(25))
+        let earlierEnd = Workstream(title: "同日较早结束", startDate: day(14), endDate: day(19))
+        let laterStart = Workstream(title: "更晚开始", startDate: day(18), endDate: day(22))
+
+        let result = WorkstreamTimelineLogic.next(
+            in: [laterStart, laterEnd, startsToday, past, earlierEnd],
+            on: day(10),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(result?.title, "同日较早结束")
+        XCTAssertNil(WorkstreamTimelineLogic.next(in: [past, startsToday], on: day(10), calendar: calendar))
+    }
+
     func testGoalCalendarBuildsSixMondayFirstWeeks() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -692,11 +714,91 @@ final class ClearMindTests: XCTestCase {
         let ticks = GoalPlanOverviewLogic.monthTicks(
             goalStart: start, goalEnd: end, width: 700, calendar: calendar
         )
-        XCTAssertFalse(ticks.contains(october))
+        XCTAssertTrue(ticks.contains(october))
         XCTAssertTrue(ticks.allSatisfy { tick in
             let days = calendar.dateComponents([.day], from: start, to: tick).day!
-            return Double(days) / 300 * 700 + 64 <= 700
+            let x = CGFloat(days) / 300 * 700
+            let origin = GoalPlanOverviewLogic.monthLabelOrigin(
+                at: x,
+                plotWidth: 700,
+                isFirst: tick == start
+            )
+            return origin >= 0 && origin + GoalPlanOverviewLogic.monthLabelWidth <= 700
         })
+        let octoberPosition = CGFloat(calendar.dateComponents([.day], from: start, to: october).day!) / 300 * 700
+        let octoberOrigin = GoalPlanOverviewLogic.monthLabelOrigin(
+            at: octoberPosition,
+            plotWidth: 700,
+            isFirst: false
+        )
+        XCTAssertEqual(octoberOrigin + GoalPlanOverviewLogic.monthLabelWidth / 2, octoberPosition, accuracy: 0.0001)
+    }
+
+    func testPlanOverviewMonthLabelOriginsAlignWithTickCentersAndClampToPlot() {
+        XCTAssertEqual(
+            GoalPlanOverviewLogic.monthLabelOrigin(at: 0, plotWidth: 400, isFirst: true),
+            0,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            GoalPlanOverviewLogic.monthLabelOrigin(at: 200, plotWidth: 400, isFirst: false),
+            168,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            GoalPlanOverviewLogic.monthLabelOrigin(at: 390, plotWidth: 400, isFirst: false),
+            336,
+            accuracy: 0.0001
+        )
+    }
+
+    func testProgressMonthMarkersKeepEveryBoundaryAndFilterLabelsNearEdges() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 8, day: 8))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 11, day: 6))!
+
+        let markers = GoalPlanOverviewLogic.progressMonthMarkers(
+            goalStart: start,
+            goalEnd: end,
+            width: 600,
+            minimumLabelSpacing: 90,
+            edgeClearance: 72,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(markers.map { calendar.component(.month, from: $0.date) }, [9, 10, 11])
+        XCTAssertEqual(markers[0].fraction, 24.0 / 91.0, accuracy: 0.0001)
+        XCTAssertEqual(markers[1].fraction, 54.0 / 91.0, accuracy: 0.0001)
+        XCTAssertEqual(markers[2].fraction, 85.0 / 91.0, accuracy: 0.0001)
+        XCTAssertEqual(markers.map(\.showsLabel), [true, true, false])
+    }
+
+    func testProgressMonthMarkersThinLabelsWithoutDroppingDividers() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 8, day: 8))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 11, day: 6))!
+
+        let narrow = GoalPlanOverviewLogic.progressMonthMarkers(
+            goalStart: start,
+            goalEnd: end,
+            width: 220,
+            minimumLabelSpacing: 90,
+            edgeClearance: 72,
+            calendar: calendar
+        )
+        let singleMonthEnd = calendar.date(from: DateComponents(year: 2026, month: 8, day: 28))!
+        let singleMonth = GoalPlanOverviewLogic.progressMonthMarkers(
+            goalStart: start,
+            goalEnd: singleMonthEnd,
+            width: 220,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(narrow.count, 3, "窄窗口仍应保留每条月份分隔线。")
+        XCTAssertEqual(narrow.map(\.showsLabel), [false, true, false])
+        XCTAssertTrue(singleMonth.isEmpty)
     }
 
     func testTimelineResizeSessionUsesFixedPointerOriginForEveryPreview() {

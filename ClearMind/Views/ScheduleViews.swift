@@ -19,36 +19,37 @@ struct ScheduleSection: View {
     var body: some View {
         DashboardIslandSection {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .center, spacing: 12) {
-                    Text("时间表")
-                        .font(.system(size: 19, weight: .semibold))
-
-                    Spacer()
-
-                    if isEditing {
-                        Button {
-                            drafts.append(ScheduleBlockDraft())
-                            rowIssues = [:]
-                        } label: {
-                            Label("新增一行", systemImage: "plus")
+                DashboardModuleHeading(
+                    "时间表",
+                    colorKey: "sage",
+                    accessibilityIdentifier: "dashboard-module-heading-schedule"
+                ) {
+                    HStack(spacing: 8) {
+                        if isEditing {
+                            Button {
+                                drafts.append(ScheduleBlockDraft())
+                                rowIssues = [:]
+                            } label: {
+                                Label("新增一行", systemImage: "plus")
+                            }
+                            .buttonStyle(QuietButtonStyle())
+                            .accessibilityIdentifier("schedule-add-row")
                         }
-                        .buttonStyle(QuietButtonStyle())
-                        .accessibilityIdentifier("schedule-add-row")
-                    }
 
-                    if isEditing {
-                        Button("取消", action: cancelEditing)
-                            .buttonStyle(QuietButtonStyle())
-                            .keyboardShortcut(.cancelAction)
+                        if isEditing {
+                            Button("取消", action: cancelEditing)
+                                .buttonStyle(QuietButtonStyle())
+                                .keyboardShortcut(.cancelAction)
 
-                        Button("完成", action: finishEditing)
-                            .buttonStyle(PrimaryButtonStyle())
-                            .accessibilityIdentifier("schedule-edit-toggle")
-                    } else {
-                        Button("编辑", action: startEditing)
-                            .buttonStyle(QuietButtonStyle())
-                            .disabled(selectedTemplate == nil)
-                            .accessibilityIdentifier("schedule-edit-toggle")
+                            Button("完成", action: finishEditing)
+                                .buttonStyle(PrimaryButtonStyle())
+                                .accessibilityIdentifier("schedule-edit-toggle")
+                        } else {
+                            Button("编辑", action: startEditing)
+                                .buttonStyle(QuietButtonStyle())
+                                .disabled(selectedTemplate == nil)
+                                .accessibilityIdentifier("schedule-edit-toggle")
+                        }
                     }
                 }
 

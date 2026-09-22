@@ -16,33 +16,40 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        PageContainer {
-            VStack(alignment: .leading, spacing: 46) {
-                TimelineView(.everyMinute) { context in
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        Text(context.date.formatted(
-                            .dateTime.year().month().day().weekday(.wide).locale(Locale(identifier: "zh_CN"))
-                        ))
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(1.4)
-                        .foregroundStyle(CMTheme.textTertiary)
-                        .accessibilityIdentifier("dashboard-date")
+        NavigationStack {
+            PageContainer {
+                VStack(alignment: .leading, spacing: 46) {
+                    TimelineView(.everyMinute) { context in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(context.date.formatted(
+                                .dateTime.year().month().day().weekday(.wide).locale(Locale(identifier: "zh_CN"))
+                            ))
+                            .font(.system(size: 11, weight: .semibold))
+                            .tracking(1.4)
+                            .foregroundStyle(CMTheme.textTertiary)
+                            .accessibilityIdentifier("dashboard-date")
 
-                        Spacer()
+                            Circle()
+                                .fill(CMTheme.separator)
+                                .frame(width: 3, height: 3)
+                                .accessibilityHidden(true)
 
-                        Text(clockText(for: context.date))
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(CMTheme.textPrimary)
-                            .monospacedDigit()
-                            .accessibilityIdentifier("dashboard-time")
+                            Text(clockText(for: context.date))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(CMTheme.textSecondary)
+                                .monospacedDigit()
+                                .accessibilityIdentifier("dashboard-time")
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("dashboard-date-time")
+                        .padding(.bottom, 8)
                     }
-                    .padding(.bottom, 8)
+
+                    ScheduleSection()
+
+                    DashboardIslandSection { dashboardGoals }
+                    DashboardIslandSection { nearTermSection }
                 }
-
-                ScheduleSection()
-
-                DashboardIslandSection { dashboardGoals }
-                DashboardIslandSection { nearTermSection }
             }
         }
     }
@@ -58,8 +65,14 @@ struct DashboardView: View {
 
     private var dashboardGoals: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SectionHeading("正在追求的方向", actionTitle: "查看全部") {
-                onNavigate(.goals)
+            DashboardModuleHeading(
+                "目标",
+                colorKey: "denim",
+                accessibilityIdentifier: "dashboard-module-heading-goals"
+            ) {
+                Button("查看全部") { onNavigate(.goals) }
+                    .buttonStyle(QuietButtonStyle())
+                    .foregroundStyle(CMTheme.textSecondary)
             }
 
             if activeGoals.isEmpty {
@@ -73,7 +86,13 @@ struct DashboardView: View {
                     spacing: 16
                 ) {
                     ForEach(activeGoals.prefix(3)) { goal in
-                        GoalSummaryCard(goal: goal, showsProgressCalendar: true)
+                        NavigationLink {
+                            GoalDetailView(goal: goal)
+                        } label: {
+                            GoalSummaryCard(goal: goal, showsProgressCalendar: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("dashboard-goal-card-\(goal.id.uuidString)")
                     }
                 }
             }
@@ -82,8 +101,21 @@ struct DashboardView: View {
 
     private var nearTermSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeading("近期事项", trailingText: recentItems.isEmpty ? nil : "\(recentItems.count) 条", actionTitle: "查看全部") {
-                onNavigate(.nearTerm)
+            DashboardModuleHeading(
+                "近期事项",
+                colorKey: "ochre",
+                accessibilityIdentifier: "dashboard-module-heading-near-term"
+            ) {
+                HStack(spacing: 8) {
+                    if !recentItems.isEmpty {
+                        Text("\(recentItems.count) 条")
+                            .font(.system(size: 12))
+                            .foregroundStyle(CMTheme.textSecondary)
+                    }
+                    Button("查看全部") { onNavigate(.nearTerm) }
+                        .buttonStyle(QuietButtonStyle())
+                        .foregroundStyle(CMTheme.textSecondary)
+                }
             }
             QuietDivider()
 

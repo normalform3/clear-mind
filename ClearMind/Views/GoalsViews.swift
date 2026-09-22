@@ -185,71 +185,16 @@ struct GoalDetailView: View {
             }
     }
 
+    private var goalDuration: Int {
+        TimelineMath.inclusiveDayCount(from: goal.startDate, to: goal.endDate)
+    }
+
     var body: some View {
         PageContainer {
-            VStack(alignment: .leading, spacing: 32) {
-                HStack(alignment: .top, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(goal.title)
-                            .font(.system(size: 29, weight: .semibold))
-                        if !goal.details.trimmed.isEmpty {
-                            Text(goal.details)
-                                .font(.system(size: 14))
-                                .foregroundStyle(CMTheme.textSecondary)
-                                .lineSpacing(4)
-                                .frame(maxWidth: 650, alignment: .leading)
-                        }
-                        TagPills(tags: goal.tags)
-                    }
-                    Spacer()
-                    Menu {
-                        Button("编辑目标") { editingGoal = true }
-                        Button("归档目标", action: archiveGoal)
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .frame(width: 28, height: 24)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                }
-
-                HStack(spacing: 12) {
-                    Button {
-                        showingNewWorkstream = true
-                    } label: {
-                        Label("添加推进项", systemImage: "plus")
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-
-                    Button {
-                        showingNewMilestone = true
-                    } label: {
-                        Label("添加里程碑", systemImage: "diamond")
-                    }
-                    .buttonStyle(QuietButtonStyle())
-
-                    Spacer()
-
-                    Toggle("显示已完成里程碑", isOn: $showCompletedMilestones)
-                        .toggleStyle(.checkbox)
-                        .font(.system(size: 12))
-                }
-
+            VStack(alignment: .leading, spacing: 30) {
+                goalSummary
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        Text("推进时间图")
-                            .font(.system(size: 17, weight: .semibold))
-                        Text("\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate)")
-                            .font(.system(size: 12))
-                            .foregroundStyle(CMTheme.textSecondary)
-                        Spacer()
-                        Button(isEditingTimeline ? "完成" : "编辑时间") {
-                            isEditingTimeline.toggle()
-                        }
-                        .buttonStyle(QuietButtonStyle())
-                        .foregroundStyle(CMTheme.textSecondary)
-                        .accessibilityIdentifier("timeline-edit-toggle")
-                    }
+                    planningToolbar
                     QuietDivider()
                     if isEditingTimeline {
                         GoalTimelineView(
@@ -271,11 +216,9 @@ struct GoalDetailView: View {
                         )
                     }
                 }
-
-                goalItemsList
             }
         }
-        .navigationTitle(goal.title)
+        .navigationTitle("")
         .sheet(isPresented: $editingGoal) { GoalEditor(goal: goal) }
         .sheet(isPresented: $showingNewWorkstream) { WorkstreamEditor(goal: goal) }
         .sheet(isPresented: $showingNewMilestone) { MilestoneEditor(goal: goal) }
@@ -297,6 +240,87 @@ struct GoalDetailView: View {
         } message: {
             Text(goalActionErrorMessage ?? "请稍后重试。")
         }
+    }
+
+    private var goalSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 24) {
+                Text(goal.title)
+                    .font(.system(size: 29, weight: .semibold))
+                Spacer()
+                HStack(spacing: 4) {
+                    HoverIconButton(
+                        systemName: "pencil",
+                        helpText: "编辑目标",
+                        tint: CMTheme.color(for: "denim"),
+                        accessibilityIdentifier: "goal-edit-button"
+                    ) {
+                        editingGoal = true
+                    }
+                    HoverIconButton(
+                        systemName: "archivebox",
+                        helpText: "归档目标",
+                        tint: CMTheme.color(for: "clay"),
+                        accessibilityIdentifier: "goal-archive-button",
+                        action: archiveGoal
+                    )
+                }
+            }
+
+            Text("\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate) · \(goalDuration) 天")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(CMTheme.textSecondary)
+                .monospacedDigit()
+                .accessibilityIdentifier("goal-detail-period-summary")
+
+            if !goal.details.trimmed.isEmpty {
+                Text(goal.details)
+                    .font(.system(size: 14))
+                    .foregroundStyle(CMTheme.textSecondary)
+                    .lineSpacing(4)
+                    .frame(maxWidth: 650, alignment: .leading)
+            }
+
+            TagPills(tags: goal.tags)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("goal-detail-summary")
+    }
+
+    private var planningToolbar: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("推进计划")
+                .font(.system(size: 17, weight: .semibold))
+
+            Button {
+                showingNewWorkstream = true
+            } label: {
+                Label("添加推进项", systemImage: "plus")
+            }
+            .buttonStyle(PrimaryButtonStyle())
+
+            Button {
+                showingNewMilestone = true
+            } label: {
+                Label("添加里程碑", systemImage: "diamond")
+            }
+            .buttonStyle(QuietButtonStyle())
+
+            Spacer(minLength: 12)
+
+            Toggle("显示已完成里程碑", isOn: $showCompletedMilestones)
+                .toggleStyle(.checkbox)
+                .font(.system(size: 12))
+
+            Button(isEditingTimeline ? "完成" : "编辑时间") {
+                isEditingTimeline.toggle()
+            }
+            .buttonStyle(QuietButtonStyle())
+            .foregroundStyle(CMTheme.textSecondary)
+            .accessibilityIdentifier("timeline-edit-toggle")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("goal-plan-toolbar")
     }
 
     private func archiveGoal() {
@@ -321,42 +345,6 @@ struct GoalDetailView: View {
         }
     }
 
-    private var goalItemsList: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeading("推进项")
-            QuietDivider()
-            if displayedWorkstreams.isEmpty {
-                EmptyState("还没有推进项", message: "把可以并行推进的小目标放进时间图。", actionTitle: "添加推进项") {
-                    showingNewWorkstream = true
-                }
-            } else {
-                ForEach(displayedWorkstreams) { item in
-                    Button { editingWorkstream = item } label: {
-                        HStack(spacing: 18) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(item.title)
-                                    .font(.system(size: 14, weight: .medium))
-                                if !item.details.trimmed.isEmpty {
-                                    Text(item.details)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(CMTheme.textSecondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer()
-                            Text("\(item.startDate.compactChineseDate) – \(item.endDate.compactChineseDate)")
-                                .font(.system(size: 11))
-                                .foregroundStyle(CMTheme.textSecondary)
-                        }
-                        .padding(.vertical, 12)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    QuietDivider()
-                }
-            }
-        }
-    }
 }
 
 struct GoalEditor: View {

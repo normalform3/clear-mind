@@ -511,6 +511,24 @@ enum WorkstreamTimelineLogic {
             }
     }
 
+    static func next(
+        in workstreams: [Workstream],
+        on date: Date,
+        calendar: Calendar = .current
+    ) -> Workstream? {
+        let day = calendar.startOfDay(for: date)
+        return workstreams
+            .filter { calendar.startOfDay(for: $0.startDate) > day }
+            .min { lhs, rhs in
+                let lhsStart = calendar.startOfDay(for: lhs.startDate)
+                let rhsStart = calendar.startOfDay(for: rhs.startDate)
+                if lhsStart == rhsStart {
+                    return calendar.startOfDay(for: lhs.endDate) < calendar.startOfDay(for: rhs.endDate)
+                }
+                return lhsStart < rhsStart
+            }
+    }
+
     static func resizedRange(
         startDate: Date,
         endDate: Date,
@@ -617,6 +635,12 @@ struct GoalPlanSpan: Equatable {
     let width: Double
 }
 
+struct GoalProgressMonthMarker: Equatable {
+    let date: Date
+    let fraction: CGFloat
+    let showsLabel: Bool
+}
+
 struct GoalPlanFocus {
     enum State: Equatable {
         case empty
@@ -694,11 +718,7 @@ enum GoalPlanOverviewLogic {
         }
 
         let day = calendar.startOfDay(for: date)
-        let next = workstreams
-            .filter { calendar.startOfDay(for: $0.startDate) > day }
-            .min { lhs, rhs in
-                lhs.startDate == rhs.startDate ? lhs.endDate < rhs.endDate : lhs.startDate < rhs.startDate
-            }
+        let next = WorkstreamTimelineLogic.next(in: workstreams, on: day, calendar: calendar)
         if day < calendar.startOfDay(for: goalStart) {
             return GoalPlanFocus(state: .upcoming, current: [], next: next)
         }
@@ -723,13 +743,55 @@ enum GoalPlanOverviewLogic {
         let ticks = TimelineMath.monthTicks(from: goalStart, to: goalEnd, calendar: calendar)
         let totalDays = CGFloat(TimelineMath.inclusiveDayCount(from: goalStart, to: goalEnd, calendar: calendar))
         var lastPosition = -CGFloat.infinity
-        return ticks.filter { tick in
+        return ticks.enumerated().compactMap { index, tick in
             let position = CGFloat(TimelineMath.dayOffset(from: goalStart, to: tick, calendar: calendar)) / totalDays * width
-            guard position + monthLabelWidth <= width else { return false }
-            guard position - lastPosition >= minimumSpacing else { return false }
+            let trailingExtent = index == 0 ? monthLabelWidth : monthLabelWidth / 2
+            guard position + trailingExtent <= width else { return nil }
+            guard position - lastPosition >= minimumSpacing else { return nil }
             lastPosition = position
-            return true
+            return tick
         }
+    }
+
+    static func monthLabelOrigin(
+        at position: CGFloat,
+        plotWidth: CGFloat,
+        isFirst: Bool
+    ) -> CGFloat {
+        guard !isFirst else { return 0 }
+        return min(
+            max(0, position - monthLabelWidth / 2),
+            max(0, plotWidth - monthLabelWidth)
+        )
+    }
+
+    static func progressMonthMarkers(
+        goalStart: Date,
+        goalEnd: Date,
+        width: CGFloat,
+        minimumLabelSpacing: CGFloat = 72,
+        edgeClearance: CGFloat = 82,
+        calendar: Calendar = .current
+    ) -> [GoalProgressMonthMarker] {
+        let start = calendar.startOfDay(for: goalStart)
+        let end = calendar.startOfDay(for: goalEnd)
+        let totalDays = CGFloat(TimelineMath.inclusiveDayCount(from: start, to: end, calendar: calendar))
+        var lastLabelPosition = -CGFloat.infinity
+
+        return TimelineMath.monthTicks(from: start, to: end, calendar: calendar)
+            .filter { tick in
+                let day = calendar.startOfDay(for: tick)
+                return day > start && day < end
+            }
+            .map { tick in
+                let fraction = CGFloat(TimelineMath.dayOffset(from: start, to: tick, calendar: calendar)) / totalDays
+                let position = fraction * width
+                let clearsEdges = position >= edgeClearance && position <= width - edgeClearance
+                let clearsPreviousLabel = position - lastLabelPosition >= minimumLabelSpacing
+                let showsLabel = clearsEdges && clearsPreviousLabel
+                if showsLabel { lastLabelPosition = position }
+                return GoalProgressMonthMarker(date: tick, fraction: fraction, showsLabel: showsLabel)
+            }
     }
 
     static func monthLabel(for date: Date, calendar: Calendar = .current) -> String {

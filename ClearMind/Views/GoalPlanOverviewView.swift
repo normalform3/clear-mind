@@ -79,46 +79,97 @@ struct GoalPlanOverviewView: View {
             }
 
             GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(CMTheme.color(for: "denim").opacity(0.14))
-                        .frame(height: 8)
-                    Capsule()
-                        .fill(CMTheme.color(for: "denim"))
-                        .frame(width: geometry.size.width * elapsedFraction, height: 8)
-                    if today >= goal.startDate && today <= goal.endDate {
-                        Circle()
-                            .fill(CMTheme.color(for: "clay"))
-                            .frame(width: 10, height: 10)
-                            .offset(x: max(0, min(geometry.size.width - 10, geometry.size.width * todayPosition - 5)))
+                let tooltipWidth = min(160, geometry.size.width)
+                let tooltipX = max(
+                    0,
+                    min(geometry.size.width - tooltipWidth, geometry.size.width * todayPosition - tooltipWidth / 2)
+                )
+                let monthMarkers = GoalPlanOverviewLogic.progressMonthMarkers(
+                    goalStart: goal.startDate,
+                    goalEnd: goal.endDate,
+                    width: geometry.size.width
+                )
+
+                ZStack(alignment: .topLeading) {
+                    if isTimeProgressHovered {
+                        subtleHoverLabel(
+                            "今天 · \(today.compactChineseDate)",
+                            accessibilityIdentifier: "goal-plan-time-hover"
+                        )
+                            .frame(width: tooltipWidth)
+                            .offset(x: tooltipX)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
                     }
+
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(CMTheme.color(for: "denim").opacity(0.14))
+                            .frame(height: 8)
+                        Capsule()
+                            .fill(CMTheme.color(for: "denim"))
+                            .frame(width: geometry.size.width * elapsedFraction, height: 8)
+                        if isTimeProgressHovered {
+                            ForEach(monthMarkers, id: \.date) { marker in
+                                Rectangle()
+                                    .fill(CMTheme.textPrimary.opacity(0.26))
+                                    .frame(width: 1, height: 14)
+                                    .offset(x: max(
+                                        0,
+                                        min(geometry.size.width - 1, geometry.size.width * marker.fraction)
+                                    ))
+                            }
+                        }
+                        if today >= goal.startDate && today <= goal.endDate {
+                            Circle()
+                                .fill(CMTheme.color(for: "clay"))
+                                .frame(width: 10, height: 10)
+                                .offset(x: max(0, min(geometry.size.width - 10, geometry.size.width * todayPosition - 5)))
+                        }
+                    }
+                    .frame(height: 16)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("目标周期进度条")
+                    .accessibilityIdentifier("goal-plan-progress-track")
+                    .offset(y: 20)
+
+                    if isTimeProgressHovered {
+                        HStack(spacing: 0) {
+                            Text(goal.startDate.compactChineseDate)
+                                .accessibilityLabel(Text(verbatim: goal.startDate.compactChineseDate))
+                                .accessibilityIdentifier("goal-plan-progress-start-date")
+                            Spacer(minLength: 16)
+                            Text(goal.endDate.compactChineseDate)
+                                .accessibilityLabel(Text(verbatim: goal.endDate.compactChineseDate))
+                                .accessibilityIdentifier("goal-plan-progress-end-date")
+                        }
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(CMTheme.textTertiary)
+                        .monospacedDigit()
+                        .frame(width: geometry.size.width)
+                        .offset(y: 39)
+                        .transition(.opacity)
+
+                        ForEach(monthMarkers.filter(\.showsLabel), id: \.date) { marker in
+                            progressMonthLabel(marker, width: geometry.size.width)
+                        }
+                    }
+
                     Color.clear
                         .contentShape(Rectangle())
-                        .onHover { isTimeProgressHovered = $0 }
-                }
-                .frame(height: 20)
-                .overlay(alignment: .topLeading) {
-                    if isTimeProgressHovered {
-                        hoverLabel("今天：\(today.compactChineseDate)")
-                            .offset(x: max(0, min(geometry.size.width - 160, geometry.size.width * todayPosition - 80)), y: 24)
-                            .allowsHitTesting(false)
-                    }
+                        .onHover { hovering in
+                            withAnimation(.easeOut(duration: 0.16)) {
+                                isTimeProgressHovered = hovering
+                            }
+                        }
+                        .accessibilityHidden(true)
                 }
             }
-            .frame(height: 20)
+            .frame(height: 54)
             .zIndex(isTimeProgressHovered ? 1 : 0)
-            .accessibilityElement(children: .ignore)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("今天：\(today.compactChineseDate)")
             .accessibilityIdentifier("goal-plan-time-progress")
-
-            HStack {
-                Text(goal.startDate.compactChineseDate)
-                Spacer()
-                Text(goal.endDate.compactChineseDate)
-            }
-            .font(.system(size: 10))
-            .foregroundStyle(CMTheme.textSecondary)
-            .monospacedDigit()
         }
     }
 
@@ -146,7 +197,7 @@ struct GoalPlanOverviewView: View {
                             .fontWeight(.medium)
                             .accessibilityIdentifier("goal-plan-current-\(item.id.uuidString)")
                         Spacer(minLength: 8)
-                        Text("至 \(shortDate(item.endDate))")
+                        Text(remainingText(for: item))
                             .foregroundStyle(CMTheme.textSecondary)
                     }
                 }
@@ -167,7 +218,7 @@ struct GoalPlanOverviewView: View {
     @ViewBuilder
     private var nextItemText: some View {
         if let next = focus.next {
-            Text("接下来：\(next.title) · \(next.startDate.compactChineseDate)")
+            Text("接下来：\(next.title) · 还有 \(daysUntilStart(of: next)) 天开始")
                 .foregroundStyle(CMTheme.textSecondary)
         } else {
             Text("暂未安排后续推进项")
@@ -210,7 +261,7 @@ struct GoalPlanOverviewView: View {
                         path.addLine(to: CGPoint(x: x, y: chartHeight))
                     }
                 }
-                .stroke(CMTheme.separator.opacity(0.75), style: StrokeStyle(lineWidth: 0.8, dash: [3, 4]))
+                .stroke(CMTheme.separator.opacity(0.92), style: StrokeStyle(lineWidth: 0.85, dash: [2, 4]))
                 .frame(width: geometry.size.width, height: chartHeight)
                 .allowsHitTesting(false)
             }
@@ -236,15 +287,18 @@ struct GoalPlanOverviewView: View {
                         goalStart: goal.startDate,
                         goalEnd: goal.endDate
                     )
-                    let tooltipWidth = min(plotWidth, 320)
+                    let tooltipWidth = min(plotWidth, 220)
                     let centerX = plotWidth * (span.start + span.width / 2)
                     let tooltipX = max(0, min(plotWidth - tooltipWidth, centerX - tooltipWidth / 2))
 
-                    hoverLabel("\(item.title)：\(item.startDate.compactChineseDate) – \(item.endDate.compactChineseDate)")
-                        .frame(width: tooltipWidth, alignment: .leading)
+                    subtleHoverLabel(
+                        "\(item.startDate.compactChineseDate) – \(item.endDate.compactChineseDate)",
+                        accessibilityIdentifier: "goal-plan-workstream-hover"
+                    )
+                        .frame(width: tooltipWidth)
                         .offset(
                             x: labelWidth + columnSpacing + tooltipX,
-                            y: axisHeight + CGFloat(row) * workstreamHeight - 8
+                            y: axisHeight + CGFloat(row) * workstreamHeight + 5
                         )
                         .allowsHitTesting(false)
                 }
@@ -268,14 +322,21 @@ struct GoalPlanOverviewView: View {
                 .frame(width: labelWidth, alignment: .leading)
 
             ZStack(alignment: .topLeading) {
-                ForEach(ticks, id: \.self) { date in
+                ForEach(Array(ticks.enumerated()), id: \.element) { index, date in
                     let x = dayPosition(date) * plotWidth
                     Text(verbatim: GoalPlanOverviewLogic.monthLabel(for: date))
                         .font(.system(size: 10))
                         .foregroundStyle(CMTheme.textSecondary)
                         .monospacedDigit()
-                        .frame(width: GoalPlanOverviewLogic.monthLabelWidth, alignment: .leading)
-                        .offset(x: x)
+                        .frame(
+                            width: GoalPlanOverviewLogic.monthLabelWidth,
+                            alignment: index == 0 ? .leading : .center
+                        )
+                        .offset(x: GoalPlanOverviewLogic.monthLabelOrigin(
+                            at: x,
+                            plotWidth: plotWidth,
+                            isFirst: index == 0
+                        ))
                 }
             }
             .frame(width: plotWidth, height: axisHeight, alignment: .topLeading)
@@ -299,14 +360,15 @@ struct GoalPlanOverviewView: View {
 
         return HStack(spacing: columnSpacing) {
             Button { onSelectWorkstream(item) } label: {
-                VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(item.title)
                         .font(.system(size: 12, weight: isCurrent ? .semibold : .medium))
                         .foregroundStyle(CMTheme.textPrimary)
                         .lineLimit(1)
-                    Text("\(shortDate(item.startDate)) – \(shortDate(item.endDate)) · \(days) 天")
+                    Spacer(minLength: 4)
+                    Text("\(days) 天")
                         .font(.system(size: 10))
-                        .foregroundStyle(CMTheme.textSecondary)
+                        .foregroundStyle(CMTheme.textTertiary)
                         .monospacedDigit()
                         .lineLimit(1)
                 }
@@ -411,17 +473,48 @@ struct GoalPlanOverviewView: View {
         date.formatted(.dateTime.month().day().locale(Locale(identifier: "zh_CN")))
     }
 
-    private func hoverLabel(_ title: String) -> some View {
+    private func remainingText(for workstream: Workstream) -> String {
+        let days = GoalCalendarLogic.remainingDays(until: workstream.endDate, from: today)
+        return days == 0 ? "今天结束" : "还剩 \(days) 天"
+    }
+
+    private func daysUntilStart(of workstream: Workstream) -> Int {
+        max(1, TimelineMath.dayOffset(from: today, to: workstream.startDate))
+    }
+
+    private func progressMonthLabel(_ marker: GoalProgressMonthMarker, width: CGFloat) -> some View {
+        let year = Calendar.current.component(.year, from: marker.date)
+        let month = Calendar.current.component(.month, from: marker.date)
+        let x = max(0, min(width - 44, width * marker.fraction - 22))
+
+        return Text("\(month)月")
+            .font(.system(size: 9))
+            .foregroundStyle(CMTheme.textTertiary)
+            .monospacedDigit()
+            .frame(width: 44)
+            .offset(x: x, y: 39)
+            .accessibilityLabel("\(year)年\(month)月")
+            .accessibilityIdentifier("goal-plan-progress-month-\(year)-\(month)")
+            .transition(.opacity)
+    }
+
+    private func subtleHoverLabel(
+        _ title: String,
+        accessibilityIdentifier: String
+    ) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(CMTheme.textPrimary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 6))
+            .font(.system(size: 10))
+            .foregroundStyle(CMTheme.textTertiary)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(CMTheme.quietFill.opacity(0.92), in: RoundedRectangle(cornerRadius: 5))
             .overlay {
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(CMTheme.separator, lineWidth: 0.7)
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(CMTheme.separator.opacity(0.7), lineWidth: 0.5)
             }
-            .shadow(color: .black.opacity(0.1), radius: 5, y: 2)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: title))
+            .accessibilityIdentifier(accessibilityIdentifier)
     }
 }

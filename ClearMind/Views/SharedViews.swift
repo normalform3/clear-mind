@@ -77,6 +77,114 @@ struct SectionHeading: View {
     }
 }
 
+struct BrushHighlightShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.34))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.2),
+            control1: CGPoint(x: rect.width * 0.24, y: rect.minY + rect.height * 0.06),
+            control2: CGPoint(x: rect.width * 0.72, y: rect.minY + rect.height * 0.36)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.maxX - rect.width * 0.03, y: rect.maxY - rect.height * 0.18),
+            control1: CGPoint(x: rect.maxX + rect.width * 0.02, y: rect.height * 0.44),
+            control2: CGPoint(x: rect.maxX - rect.width * 0.01, y: rect.height * 0.7)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.02, y: rect.maxY - rect.height * 0.04),
+            control1: CGPoint(x: rect.width * 0.7, y: rect.maxY),
+            control2: CGPoint(x: rect.width * 0.26, y: rect.maxY - rect.height * 0.13)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.34),
+            control1: CGPoint(x: rect.minX - rect.width * 0.02, y: rect.height * 0.78),
+            control2: CGPoint(x: rect.minX + rect.width * 0.01, y: rect.height * 0.52)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+struct DashboardModuleHeading<Trailing: View>: View {
+    let title: String
+    let colorKey: String
+    let accessibilityIdentifier: String
+    @ViewBuilder let trailing: Trailing
+
+    init(
+        _ title: String,
+        colorKey: String,
+        accessibilityIdentifier: String,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.title = title
+        self.colorKey = colorKey
+        self.accessibilityIdentifier = accessibilityIdentifier
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(title)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(CMTheme.textPrimary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background {
+                    BrushHighlightShape()
+                        .fill(CMTheme.color(for: colorKey).opacity(0.16))
+                        .padding(.horizontal, -7)
+                        .padding(.vertical, -1)
+                        .offset(y: 2)
+                }
+                .accessibilityIdentifier(accessibilityIdentifier)
+
+            Spacer()
+            trailing
+        }
+    }
+}
+
+struct HoverIconButton: View {
+    @State private var isHovered = false
+
+    let systemName: String
+    let helpText: String
+    let tint: Color
+    let accessibilityIdentifier: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isHovered ? tint : CMTheme.textSecondary)
+        .background(
+            (isHovered ? tint.opacity(0.11) : Color.clear),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+        .overlay {
+            if isHovered {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(tint.opacity(0.18), lineWidth: 0.7)
+            }
+        }
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.14)) {
+                isHovered = hovering
+            }
+        }
+        .help(helpText)
+        .accessibilityLabel(helpText)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
 struct IslandSection<Content: View>: View {
     @ViewBuilder let content: Content
 
@@ -290,6 +398,10 @@ struct GoalSummaryCard: View {
         WorkstreamTimelineLogic.current(in: goal.workstreams, on: .now)
     }
 
+    private var nextWorkstream: Workstream? {
+        WorkstreamTimelineLogic.next(in: goal.workstreams, on: .now)
+    }
+
     private var nextMilestone: Milestone? {
         goal.milestones
             .filter { !$0.isCompleted && $0.date >= Date.now.startOfDay }
@@ -336,6 +448,37 @@ struct GoalSummaryCard: View {
                     ForEach(currentWorkstreams) { workstream in
                         workstreamRow(workstream)
                     }
+                }
+            }
+
+            if showsProgressCalendar, let nextWorkstream {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("下一阶段")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(CMTheme.textTertiary)
+
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(CMTheme.color(for: "denim").opacity(0.32))
+                            .frame(width: 6, height: 6)
+                            .padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(nextWorkstream.title)
+                                .font(.system(size: 12))
+                                .foregroundStyle(CMTheme.textSecondary)
+                                .lineLimit(1)
+                            Text("\(nextWorkstream.startDate.compactChineseDate) – \(nextWorkstream.endDate.compactChineseDate)")
+                                .font(.system(size: 10))
+                                .foregroundStyle(CMTheme.textTertiary)
+                                .monospacedDigit()
+                        }
+                        Spacer(minLength: 8)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(
+                        "下一阶段，\(nextWorkstream.title)，\(nextWorkstream.startDate.compactChineseDate) 至 \(nextWorkstream.endDate.compactChineseDate)"
+                    )
+                    .accessibilityIdentifier("next-workstream-\(nextWorkstream.id.uuidString)-summary")
                 }
             }
 
