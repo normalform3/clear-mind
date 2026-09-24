@@ -3,7 +3,7 @@ import XCTest
 
 final class ClearMindUITests: XCTestCase {
     @MainActor
-    func testOverviewShowsOnlyDateAndNoInboxSection() throws {
+    func testOverviewShowsDaylightArcAndTwelveHourTime() throws {
         let app = launchApp()
         let expectedDate = Date.now.formatted(
             .dateTime.year().month().day().weekday(.wide).locale(Locale(identifier: "zh_CN"))
@@ -19,16 +19,131 @@ final class ClearMindUITests: XCTestCase {
         let displayedTime = app.staticTexts["dashboard-time"]
         XCTAssertTrue(displayedTime.exists)
         XCTAssertTrue(app.descendants(matching: .any)["dashboard-date-time"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard-daylight-arc"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["dashboard-day-dial"].exists)
         let timeValue = try XCTUnwrap(displayedTime.value as? String)
         XCTAssertNotNil(
-            timeValue.range(of: #"^\d{2}:\d{2}$"#, options: .regularExpression),
+            timeValue.range(of: #"^(上午|下午) \d{1,2}:\d{2}$"#, options: .regularExpression),
             "顶部时间的实际值：\(timeValue)"
         )
         XCTAssertTrue(app.staticTexts["时间表"].exists)
         XCTAssertFalse(app.staticTexts["一天的时间分配"].exists)
         XCTAssertFalse(app.staticTexts["都已经安顿好了"].exists)
-        XCTAssertTrue(app.staticTexts["收集箱"].exists, "侧边栏收集箱入口应保留。")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["global-navigation-menu"].exists,
+            "全局导航菜单应始终可用。"
+        )
         XCTAssertFalse(app.buttons["打开"].exists, "安心总览不应显示收集箱区块的打开按钮。")
+    }
+
+    @MainActor
+    func testOverviewHighlightsOnlyTheCurrentScheduleRow() throws {
+        let app = launchApp(arguments: ["--uitesting-dashboard-time-fixture"])
+
+        let displayedTime = app.staticTexts["dashboard-time"]
+        XCTAssertTrue(displayedTime.waitForExistence(timeout: 5))
+        XCTAssertEqual(displayedTime.value as? String, "下午 2:30")
+        XCTAssertFalse(app.staticTexts["dashboard-current-schedule"].exists)
+        XCTAssertFalse(app.staticTexts["dashboard-next-schedule"].exists)
+
+        XCTAssertTrue(app.staticTexts["14:00 – 15:00"].exists)
+        XCTAssertTrue(app.staticTexts["15:30 – 16:00"].exists)
+        let currentRows = app.descendants(matching: .any).matching(identifier: "schedule-current-block")
+        XCTAssertEqual(currentRows.count, 1)
+
+        let editScheduleButton = app.buttons["schedule-edit-toggle"]
+        editScheduleButton.click()
+        XCTAssertTrue(app.buttons["schedule-add-row"].waitForExistence(timeout: 2))
+        XCTAssertEqual(
+            app.descendants(matching: .any).matching(identifier: "schedule-current-block").count,
+            0,
+            "编辑模式不应高亮尚未保存的安排"
+        )
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
+    @MainActor
+    func testGlobalNavigationMenuOpensAllSectionsAndKeepsCurrentPage() throws {
+        let app = launchApp()
+
+        let destinations = [
+            (identifier: "overview", title: "安心总览"),
+            (identifier: "goals", title: "长期目标"),
+            (identifier: "nearTerm", title: "近期事项"),
+            (identifier: "ideas", title: "想法库"),
+            (identifier: "inbox", title: "收集箱"),
+        ]
+
+        for destination in destinations {
+            navigate(to: destination.identifier, in: app)
+            XCTAssertTrue(
+                app.staticTexts[destination.title].waitForExistence(timeout: 2),
+                "导航后未显示页面：\(destination.identifier)"
+            )
+
+            app.descendants(matching: .any)["global-navigation-menu"].click()
+            let currentItem = app.menuItems["global-navigation-item-\(destination.identifier)"]
+            XCTAssertTrue(currentItem.waitForExistence(timeout: 2))
+            if destination.identifier == "overview" {
+                let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                screenshot.name = "global-navigation-menu"
+                screenshot.lifetime = .keepAlways
+                add(screenshot)
+            }
+            currentItem.click()
+            XCTAssertTrue(
+                app.staticTexts[destination.title].waitForExistence(timeout: 2),
+                "再次选择当前菜单项后不应离开页面：\(destination.identifier)"
+            )
+        }
+    }
+
+    @MainActor
+    func testTopLevelNavigationClearsExistingDetailPath() throws {
+        let app = launchApp(arguments: ["--uitesting-goal-fixture"])
+        let goalCard = app.buttons["dashboard-goal-card-11111111-1111-1111-1111-111111111111"]
+        XCTAssertTrue(goalCard.waitForExistence(timeout: 5))
+        goalCard.click()
+        XCTAssertTrue(app.descendants(matching: .any)["goal-detail-summary"].waitForExistence(timeout: 2))
+
+        navigate(to: "inbox", in: app)
+
+        XCTAssertTrue(app.staticTexts["收集箱"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.descendants(matching: .any)["goal-detail-summary"].exists)
+        let backButton = app.buttons.matching(
+            NSPredicate(format: "label IN %@", ["返回", "后退", "Back"])
+        ).firstMatch
+        XCTAssertFalse(backButton.exists)
+    }
+
+    @MainActor
+    func testGlobalSearchQuickCaptureAndNavigationMenuRemainAvailable() throws {
+        let app = launchApp()
+
+        let searchButton = app.buttons["global-search-toggle"]
+        XCTAssertTrue(searchButton.waitForExistence(timeout: 5))
+        searchButton.click()
+        let searchField = app.textFields["global-search-field"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        searchField.click()
+        searchField.typeText("test")
+        XCTAssertTrue(app.descendants(matching: .any)["global-search-results"].waitForExistence(timeout: 2))
+        app.typeKey("f", modifierFlags: .command)
+        XCTAssertTrue(searchField.exists)
+        XCTAssertEqual(searchField.value as? String, "test")
+        searchButton.click()
+        XCTAssertFalse(searchField.waitForExistence(timeout: 1))
+
+        let quickCapture = app.buttons["global-quick-capture"]
+        XCTAssertTrue(quickCapture.exists)
+        quickCapture.click()
+        XCTAssertTrue(app.staticTexts["先放下这件事"].waitForExistence(timeout: 2))
+        app.buttons["取消"].click()
+
+        XCTAssertTrue(app.descendants(matching: .any)["global-navigation-menu"].exists)
+        XCTAssertFalse(app.buttons["隐藏边栏"].exists)
+        XCTAssertFalse(app.buttons["显示边栏"].exists)
+        XCTAssertFalse(app.buttons["sidebar-item-overview"].exists)
     }
 
     @MainActor
@@ -78,9 +193,7 @@ final class ClearMindUITests: XCTestCase {
         if goalsButton.waitForExistence(timeout: 1) {
             goalsButton.click()
         } else {
-            let sidebarGoals = app.staticTexts["长期目标"].firstMatch
-            XCTAssertTrue(sidebarGoals.waitForExistence(timeout: 2))
-            sidebarGoals.click()
+            navigate(to: "goals", in: app)
         }
         XCTAssertTrue(app.buttons["新建目标"].waitForExistence(timeout: 2))
         app.buttons["新建目标"].click()
@@ -90,7 +203,10 @@ final class ClearMindUITests: XCTestCase {
 
     @MainActor
     func testOverviewShowsProgressCalendarAndRemainingDaysForCurrentWorkstream() throws {
-        let app = launchApp(arguments: ["--uitesting-goal-fixture"])
+        let app = launchApp(arguments: [
+            "--uitesting-goal-fixture",
+            "--uitesting-dashboard-time-fixture",
+        ])
         let goalCard = app.buttons["dashboard-goal-card-11111111-1111-1111-1111-111111111111"]
         XCTAssertTrue(goalCard.waitForExistence(timeout: 3))
 
@@ -177,9 +293,7 @@ final class ClearMindUITests: XCTestCase {
     func testTimelineEditingModeControlsHandlesAndBarStillOpensEditor() throws {
         let app = launchApp(arguments: ["--uitesting-goal-fixture"])
 
-        let sidebarGoals = app.staticTexts["长期目标"].firstMatch
-        XCTAssertTrue(sidebarGoals.waitForExistence(timeout: 5))
-        sidebarGoals.click()
+        navigate(to: "goals", in: app)
         XCTAssertFalse(app.descendants(matching: .any)["goal-progress-calendar"].exists)
 
         let goal = app.buttons["goal-card-11111111-1111-1111-1111-111111111111"]
@@ -243,7 +357,7 @@ final class ClearMindUITests: XCTestCase {
         let expectedStart = try XCTUnwrap(calendar.date(byAdding: .day, value: -45, to: referenceDay))
         let expectedEnd = try XCTUnwrap(calendar.date(byAdding: .day, value: 45, to: referenceDay))
         let app = launchApp(arguments: ["--uitesting-goal-fixture"])
-        app.staticTexts["长期目标"].firstMatch.click()
+        navigate(to: "goals", in: app)
 
         let goal = app.buttons["goal-card-11111111-1111-1111-1111-111111111111"]
         XCTAssertTrue(goal.waitForExistence(timeout: 3))
@@ -295,9 +409,20 @@ final class ClearMindUITests: XCTestCase {
     }
 
     @MainActor
+    private func navigate(to identifier: String, in app: XCUIApplication) {
+        let menu = app.descendants(matching: .any)["global-navigation-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.click()
+
+        let item = app.menuItems["global-navigation-item-\(identifier)"]
+        XCTAssertTrue(item.waitForExistence(timeout: 2), "缺少导航菜单项：\(identifier)")
+        item.click()
+    }
+
+    @MainActor
     private func launchApp(arguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--uitesting"] + arguments
+        app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "--uitesting"] + arguments
         app.launch()
         return app
     }

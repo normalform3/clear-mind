@@ -887,6 +887,75 @@ enum ScheduleTemplateResolver {
     }
 }
 
+enum DashboardDayPeriod: Equatable {
+    case lateNight
+    case earlyMorning
+    case morning
+    case afternoon
+    case evening
+
+    var title: String {
+        switch self {
+        case .lateNight: "深夜"
+        case .earlyMorning: "清晨"
+        case .morning: "上午"
+        case .afternoon: "午后"
+        case .evening: "晚间"
+        }
+    }
+
+    var colorKey: String {
+        switch self {
+        case .lateNight: "slate"
+        case .earlyMorning: "sage"
+        case .morning: "denim"
+        case .afternoon: "ochre"
+        case .evening: "clay"
+        }
+    }
+}
+
+struct DashboardTimeContext {
+    let minuteOfDay: Int
+    let dayProgress: Double
+    let period: DashboardDayPeriod
+    let currentBlock: ScheduleBlock?
+
+    static func resolve(
+        at date: Date,
+        blocks: [ScheduleBlock],
+        calendar: Calendar = .current
+    ) -> DashboardTimeContext {
+        let hour = calendar.component(.hour, from: date)
+        let minute = calendar.component(.minute, from: date)
+        let minuteOfDay = hour * 60 + minute
+        let sortedBlocks = blocks.sorted {
+            $0.startMinute == $1.startMinute
+                ? $0.endMinute < $1.endMinute
+                : $0.startMinute < $1.startMinute
+        }
+
+        return DashboardTimeContext(
+            minuteOfDay: minuteOfDay,
+            dayProgress: Double(minuteOfDay) / 1440.0,
+            period: period(at: minuteOfDay),
+            currentBlock: sortedBlocks.first {
+                $0.startMinute <= minuteOfDay && minuteOfDay < $0.endMinute
+            }
+        )
+    }
+
+    private static func period(at minute: Int) -> DashboardDayPeriod {
+        switch minute {
+        case 300..<480: .earlyMorning
+        case 480..<720: .morning
+        case 720..<1080: .afternoon
+        case 1080..<1320: .evening
+        default: .lateNight
+        }
+    }
+}
+
 @MainActor
 enum AppBootstrapper {
     static func ensureDefaultTemplate(in context: ModelContext) throws {

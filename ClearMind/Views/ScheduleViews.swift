@@ -56,7 +56,16 @@ struct ScheduleSection: View {
                 QuietDivider()
 
                 if let selectedTemplate {
-                    scheduleTable(for: selectedTemplate)
+                    if isEditing {
+                        scheduleTable(for: selectedTemplate, at: .now)
+                    } else {
+                        TimelineView(.everyMinute) { context in
+                            scheduleTable(
+                                for: selectedTemplate,
+                                at: UITestFixtureSeeder.dashboardReferenceDate ?? context.date
+                            )
+                        }
+                    }
                 } else {
                     EmptyState("正在准备时间表", message: "时间表会保存在这台 Mac 上。")
                 }
@@ -78,8 +87,11 @@ struct ScheduleSection: View {
     }
 
     @ViewBuilder
-    private func scheduleTable(for template: ScheduleTemplate) -> some View {
+    private func scheduleTable(for template: ScheduleTemplate, at referenceDate: Date) -> some View {
         let blocks = sortedBlocks(in: template)
+        let currentBlockID = isEditing
+            ? nil
+            : DashboardTimeContext.resolve(at: referenceDate, blocks: blocks).currentBlock?.id
 
         VStack(alignment: .leading, spacing: 0) {
             ScheduleTableHeader(isEditing: isEditing)
@@ -113,7 +125,11 @@ struct ScheduleSection: View {
                 ) { startEditing() }
             } else {
                 ForEach(blocks) { block in
-                    ScheduleBlockRow(block: block, saveError: { errorMessage = $0 })
+                    ScheduleBlockRow(
+                        block: block,
+                        isCurrent: block.id == currentBlockID,
+                        saveError: { errorMessage = $0 }
+                    )
                     QuietDivider()
                 }
             }
@@ -200,6 +216,7 @@ private struct ScheduleTableHeader: View {
 private struct ScheduleBlockRow: View {
     @Environment(\.modelContext) private var modelContext
     let block: ScheduleBlock
+    let isCurrent: Bool
     let saveError: (String) -> Void
 
     var body: some View {
@@ -266,6 +283,12 @@ private struct ScheduleBlockRow: View {
             }
         }
         .padding(.vertical, CMTheme.rowVerticalPadding)
+        .background(isCurrent ? CMTheme.currentScheduleHighlight : Color.clear)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(
+            isCurrent ? "schedule-current-block" : "schedule-block-\(block.id.uuidString)"
+        )
+        .accessibilityValue(isCurrent ? "当前安排" : "")
     }
 }
 

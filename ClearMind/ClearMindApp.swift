@@ -3,6 +3,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let showQuickCapture = Notification.Name("ClearMind.showQuickCapture")
+    static let focusGlobalSearch = Notification.Name("ClearMind.focusGlobalSearch")
 }
 
 @MainActor
@@ -11,12 +12,30 @@ enum UITestFixtureSeeder {
     static let workstreamID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
     static let earlierWorkstreamID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
     static let laterWorkstreamID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+    static let currentScheduleBlockID = UUID(uuidString: "55555555-5555-5555-5555-555555555555")!
+    static let nextScheduleBlockID = UUID(uuidString: "66666666-6666-6666-6666-666666666666")!
+
+    static var dashboardReferenceDate: Date? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--uitesting-dashboard-time-fixture") else { return nil }
+        return Calendar.current.date(
+            bySettingHour: 14,
+            minute: 30,
+            second: 0,
+            of: .now
+        )
+    }
 
     static func seedIfRequested(in context: ModelContext) throws {
         let arguments = ProcessInfo.processInfo.arguments
-        guard arguments.contains("--uitesting"),
-              arguments.contains("--uitesting-goal-fixture") else { return }
-        try seedGoalTimeline(in: context, referenceDate: .now)
+        guard arguments.contains("--uitesting") else { return }
+
+        if arguments.contains("--uitesting-goal-fixture") {
+            try seedGoalTimeline(in: context, referenceDate: .now)
+        }
+        if arguments.contains("--uitesting-dashboard-time-fixture") {
+            try seedDashboardSchedule(in: context)
+        }
     }
 
     static func seedGoalTimeline(
@@ -61,6 +80,32 @@ enum UITestFixtureSeeder {
         context.insert(goal)
         try context.save()
     }
+
+    static func seedDashboardSchedule(in context: ModelContext) throws {
+        let templates = try context.fetch(FetchDescriptor<ScheduleTemplate>())
+        guard let template = templates.min(by: { $0.createdAt < $1.createdAt }) else { return }
+        guard !template.blocks.contains(where: { $0.id == currentScheduleBlockID }) else { return }
+
+        let focusScope = ScheduleScope(name: "深度工作", colorKey: "denim")
+        let walkScope = ScheduleScope(name: "散步", colorKey: "sage")
+        let current = ScheduleBlock(
+            id: currentScheduleBlockID,
+            startMinute: 14 * 60,
+            endMinute: 15 * 60,
+            scope: focusScope
+        )
+        let next = ScheduleBlock(
+            id: nextScheduleBlockID,
+            startMinute: 15 * 60 + 30,
+            endMinute: 16 * 60,
+            scope: walkScope
+        )
+
+        context.insert(focusScope)
+        context.insert(walkScope)
+        template.blocks.append(contentsOf: [current, next])
+        try context.save()
+    }
 }
 
 @main
@@ -102,6 +147,12 @@ struct ClearMindApp: App {
                     NotificationCenter.default.post(name: .showQuickCapture, object: nil)
                 }
                 .keyboardShortcut("n", modifiers: .command)
+            }
+            CommandGroup(after: .textEditing) {
+                Button("搜索所有内容") {
+                    NotificationCenter.default.post(name: .focusGlobalSearch, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
             }
         }
 

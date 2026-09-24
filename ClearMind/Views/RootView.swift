@@ -31,54 +31,100 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     }
 }
 
+enum AppNavigationRoute: Hashable {
+    case goal(UUID)
+}
+
 struct RootView: View {
     @Environment(\.modelContext) private var modelContext
-    @State private var selection: SidebarSection? = .overview
+    @Query private var goals: [Goal]
+    @State private var selection: SidebarSection = .overview
+    @State private var navigationPath = NavigationPath()
     @State private var searchText = ""
+    @State private var isSearchPresented = false
     @State private var showingQuickCapture = false
     @State private var bootstrapError: String?
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
-        NavigationSplitView {
-            List(SidebarSection.allCases, selection: $selection) { section in
-                Label(section.title, systemImage: section.icon)
-                    .tag(section)
-                    .padding(.vertical, 4)
-            }
-            .navigationSplitViewColumnWidth(min: 144, ideal: 152, max: 160)
-            .listStyle(.sidebar)
-            .safeAreaInset(edge: .bottom) {
-                Text("仅保存在本机")
-                    .font(.system(size: 10))
-                    .foregroundStyle(CMTheme.textTertiary)
-                    .lineLimit(1)
-                    .padding(.vertical, 12)
-                    .help("所有内容仅保存在这台 Mac")
-            }
-        } detail: {
-            Group {
+        NavigationStack(path: $navigationPath) {
+            ZStack {
                 if searchText.trimmed.isEmpty {
                     selectedContent
                 } else {
                     SearchResultsView(query: searchText, onOpenSection: { section in
-                        selection = section
-                        searchText = ""
+                        navigate(to: section)
                     })
                 }
             }
-            .searchable(text: $searchText, placement: .toolbar, prompt: "搜索所有内容")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingQuickCapture = true
-                    } label: {
-                        Label("记到收集箱", systemImage: "square.and.pencil")
+            .navigationTitle(selection.title)
+            .navigationDestination(for: AppNavigationRoute.self) { route in
+                switch route {
+                case let .goal(goalID):
+                    if let goal = goals.first(where: { $0.id == goalID }) {
+                        GoalDetailView(goal: goal)
+                    } else {
+                        ContentUnavailableView(
+                            "找不到这个目标",
+                            systemImage: "scope",
+                            description: Text("它可能已经被删除。")
+                        )
                     }
-                    .help("记到收集箱（⌘N）")
                 }
             }
         }
-        .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                navigationMenu
+            }
+
+            ToolbarItemGroup(placement: .primaryAction) {
+                if isSearchPresented {
+                    TextField("搜索所有内容", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 9)
+                        .frame(width: 176, height: 28)
+                        .background(
+                            CMTheme.toolbarControlSurface,
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        )
+                        .focused($isSearchFocused)
+                        .onExitCommand { dismissSearch() }
+                        .accessibilityIdentifier("global-search-field")
+                }
+
+                Button {
+                    isSearchPresented ? dismissSearch() : presentSearch()
+                } label: {
+                    Image(systemName: isSearchPresented ? "xmark" : "magnifyingglass")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(CMTheme.textSecondary)
+                .background(CMTheme.toolbarControlSurface, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .accessibilityLabel(isSearchPresented ? "关闭搜索" : "搜索所有内容")
+                .accessibilityIdentifier("global-search-toggle")
+                .help(isSearchPresented ? "关闭搜索" : "搜索所有内容（⌘F）")
+
+                Button {
+                    showingQuickCapture = true
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(CMTheme.textSecondary)
+                .background(CMTheme.toolbarControlSurface, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .accessibilityLabel("记到收集箱")
+                .accessibilityIdentifier("global-quick-capture")
+                .help("记到收集箱（⌘N）")
+            }
+        }
         .background(CMTheme.canvas)
         .sheet(isPresented: $showingQuickCapture) {
             QuickCaptureSheet()
@@ -103,17 +149,80 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showQuickCapture)) { _ in
             showingQuickCapture = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .focusGlobalSearch)) { _ in
+            presentSearch()
+        }
     }
 
     @ViewBuilder
     private var selectedContent: some View {
-        switch selection ?? .overview {
-        case .overview: DashboardView(onNavigate: { selection = $0 })
+        switch selection {
+        case .overview: DashboardView(onNavigate: navigate)
         case .goals: GoalsView()
         case .nearTerm: NearTermView()
         case .ideas: IdeasView()
         case .inbox: InboxView()
         }
+    }
+
+    private var navigationMenu: some View {
+        Menu {
+            Section("今天") {
+                navigationMenuItem(for: .overview)
+            }
+
+            Section("推进") {
+                navigationMenuItem(for: .goals)
+                navigationMenuItem(for: .nearTerm)
+            }
+
+            Section("收纳") {
+                navigationMenuItem(for: .ideas)
+                navigationMenuItem(for: .inbox)
+            }
+        } label: {
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(CMTheme.textSecondary)
+        .background(CMTheme.toolbarControlSurface, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .accessibilityLabel("切换页面")
+        .accessibilityIdentifier("global-navigation-menu")
+        .help("切换页面")
+    }
+
+    private func navigationMenuItem(for section: SidebarSection) -> some View {
+        Toggle(isOn: Binding(
+            get: { selection == section },
+            set: { isOn in
+                if isOn { navigate(to: section) }
+            }
+        )) {
+            Label(section.title, systemImage: section.icon)
+        }
+        .accessibilityIdentifier("global-navigation-item-\(section.rawValue)")
+        .accessibilityAddTraits(selection == section ? .isSelected : [])
+    }
+
+    private func presentSearch() {
+        isSearchPresented = true
+        Task { @MainActor in isSearchFocused = true }
+    }
+
+    private func dismissSearch() {
+        isSearchPresented = false
+        searchText = ""
+    }
+
+    private func navigate(to section: SidebarSection) {
+        selection = section
+        navigationPath = NavigationPath()
+        dismissSearch()
     }
 }
 
@@ -154,6 +263,7 @@ private struct SearchResultsView: View {
         PageContainer {
             VStack(alignment: .leading, spacing: 30) {
                 PageHeader("搜索“\(query)”")
+                    .accessibilityIdentifier("global-search-results")
                 resultSection("长期目标", section: .goals, rows: goals.filter { matches($0.title, $0.details, $0.tags.map(\.name).joined(separator: " ")) }.map { ($0.title, $0.details) })
                 resultSection("近期事项", section: .nearTerm, rows: nearTermItems.filter { !$0.isArchived && matches($0.title, $0.details, $0.tags.map(\.name).joined(separator: " ")) }.map { ($0.title, $0.details) })
                 resultSection("想法", section: .ideas, rows: ideas.filter { !$0.isArchived && matches($0.title, $0.details, $0.tags.map(\.name).joined(separator: " ")) }.map { ($0.title, $0.details) })

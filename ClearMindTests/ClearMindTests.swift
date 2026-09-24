@@ -251,6 +251,99 @@ final class ClearMindTests: XCTestCase {
         )
     }
 
+    func testDashboardTimeContextUsesExpectedDayPeriodBoundaries() {
+        let calendar = fixedCalendar()
+        let cases: [(hour: Int, minute: Int, expected: DashboardDayPeriod)] = [
+            (0, 0, .lateNight),
+            (4, 59, .lateNight),
+            (5, 0, .earlyMorning),
+            (7, 59, .earlyMorning),
+            (8, 0, .morning),
+            (11, 59, .morning),
+            (12, 0, .afternoon),
+            (17, 59, .afternoon),
+            (18, 0, .evening),
+            (21, 59, .evening),
+            (22, 0, .lateNight)
+        ]
+
+        for item in cases {
+            let context = DashboardTimeContext.resolve(
+                at: fixedDate(hour: item.hour, minute: item.minute, calendar: calendar),
+                blocks: [],
+                calendar: calendar
+            )
+            XCTAssertEqual(context.period, item.expected, "Unexpected period at \(item.hour):\(item.minute)")
+        }
+    }
+
+    func testDashboardTimeContextReportsProgressAcrossFullDay() {
+        let calendar = fixedCalendar()
+
+        XCTAssertEqual(
+            DashboardTimeContext.resolve(
+                at: fixedDate(hour: 0, minute: 0, calendar: calendar),
+                blocks: [],
+                calendar: calendar
+            ).dayProgress,
+            0,
+            accuracy: 0.000_001
+        )
+        XCTAssertEqual(
+            DashboardTimeContext.resolve(
+                at: fixedDate(hour: 12, minute: 0, calendar: calendar),
+                blocks: [],
+                calendar: calendar
+            ).dayProgress,
+            0.5,
+            accuracy: 0.000_001
+        )
+        XCTAssertEqual(
+            DashboardTimeContext.resolve(
+                at: fixedDate(hour: 23, minute: 59, calendar: calendar),
+                blocks: [],
+                calendar: calendar
+            ).dayProgress,
+            1439.0 / 1440.0,
+            accuracy: 0.000_001
+        )
+    }
+
+    func testDashboardTimeContextFindsCurrentBlockAtBoundaries() {
+        let calendar = fixedCalendar()
+        let first = ScheduleBlock(startMinute: 9 * 60, endMinute: 10 * 60)
+        let second = ScheduleBlock(startMinute: 10 * 60, endMinute: 11 * 60)
+        let later = ScheduleBlock(startMinute: 14 * 60, endMinute: 15 * 60)
+
+        let duringFirst = DashboardTimeContext.resolve(
+            at: fixedDate(hour: 9, minute: 30, calendar: calendar),
+            blocks: [later, second, first],
+            calendar: calendar
+        )
+        XCTAssertEqual(duringFirst.currentBlock?.id, first.id)
+
+        let atBoundary = DashboardTimeContext.resolve(
+            at: fixedDate(hour: 10, minute: 0, calendar: calendar),
+            blocks: [first, later, second],
+            calendar: calendar
+        )
+        XCTAssertEqual(atBoundary.currentBlock?.id, second.id)
+
+        let inGap = DashboardTimeContext.resolve(
+            at: fixedDate(hour: 12, minute: 0, calendar: calendar),
+            blocks: [first, second, later],
+            calendar: calendar
+        )
+        XCTAssertNil(inGap.currentBlock)
+
+        let afterAll = DashboardTimeContext.resolve(
+            at: fixedDate(hour: 20, minute: 0, calendar: calendar),
+            blocks: [first, second, later],
+            calendar: calendar
+        )
+        XCTAssertNil(afterAll.currentBlock)
+    }
+
     func testGoalBoundaryValidation() {
         let calendar = Calendar(identifier: .gregorian)
         let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
@@ -1227,5 +1320,21 @@ final class ClearMindTests: XCTestCase {
             ScheduleChecklistItem.self,
             configurations: configuration
         )
+    }
+
+    private func fixedCalendar() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    private func fixedDate(hour: Int, minute: Int, calendar: Calendar) -> Date {
+        calendar.date(from: DateComponents(
+            year: 2026,
+            month: 9,
+            day: 23,
+            hour: hour,
+            minute: minute
+        ))!
     }
 }

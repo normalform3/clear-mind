@@ -20,65 +20,60 @@ struct GoalsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            PageContainer {
-                VStack(alignment: .leading, spacing: CMTheme.sectionSpacing) {
-                    HStack(alignment: .bottom) {
-                        PageHeader("长期目标")
-                        Spacer()
-                        if isReordering {
-                            Button("取消", action: cancelReordering)
-                                .buttonStyle(QuietButtonStyle())
-                            Button("完成", action: finishReordering)
-                                .buttonStyle(PrimaryButtonStyle())
-                                .accessibilityIdentifier("goal-reorder-finish")
-                        } else {
-                            if !visibleGoals.isEmpty {
-                                Button("排序", action: beginReordering)
-                                    .buttonStyle(QuietButtonStyle())
-                                    .accessibilityIdentifier("goal-reorder-start")
-                            }
-                            Button {
-                                showingNewGoal = true
-                            } label: {
-                                Label("新建目标", systemImage: "plus")
-                            }
+        PageContainer {
+            VStack(alignment: .leading, spacing: CMTheme.sectionSpacing) {
+                HStack(alignment: .bottom) {
+                    PageHeader("长期目标")
+                    Spacer()
+                    if isReordering {
+                        Button("取消", action: cancelReordering)
+                            .buttonStyle(QuietButtonStyle())
+                        Button("完成", action: finishReordering)
                             .buttonStyle(PrimaryButtonStyle())
-                        }
-                    }
-
-                    if visibleGoals.isEmpty {
-                        IslandSection {
-                            EmptyState(
-                                "还没有长期目标",
-                                message: "一个明确的方向就足够开始，不需要一次规划完所有事情。",
-                                actionTitle: "建立第一个目标"
-                            ) { showingNewGoal = true }
-                        }
+                            .accessibilityIdentifier("goal-reorder-finish")
                     } else {
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 380, maximum: 500), spacing: 18)],
-                            alignment: .leading,
-                            spacing: 18
-                        ) {
-                            ForEach(displayedGoals) { goal in
-                                if isReordering {
-                                    reorderCard(goal)
-                                } else {
-                                    NavigationLink {
-                                        GoalDetailView(goal: goal)
-                                    } label: {
-                                        GoalSummaryCard(goal: goal, showsDetails: true)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityIdentifier("goal-card-\(goal.id.uuidString)")
+                        if !visibleGoals.isEmpty {
+                            Button("排序", action: beginReordering)
+                                .buttonStyle(QuietButtonStyle())
+                                .accessibilityIdentifier("goal-reorder-start")
+                        }
+                        Button {
+                            showingNewGoal = true
+                        } label: {
+                            Label("新建目标", systemImage: "plus")
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                    }
+                }
+
+                if visibleGoals.isEmpty {
+                    IslandSection {
+                        EmptyState(
+                            "还没有长期目标",
+                            message: "一个明确的方向就足够开始，不需要一次规划完所有事情。",
+                            actionTitle: "建立第一个目标"
+                        ) { showingNewGoal = true }
+                    }
+                } else {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 380, maximum: 500), spacing: 18)],
+                        alignment: .leading,
+                        spacing: 18
+                    ) {
+                        ForEach(displayedGoals) { goal in
+                            if isReordering {
+                                reorderCard(goal)
+                            } else {
+                                NavigationLink(value: AppNavigationRoute.goal(goal.id)) {
+                                    GoalSummaryCard(goal: goal, showsDetails: true)
                                 }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("goal-card-\(goal.id.uuidString)")
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("长期目标")
         }
         .sheet(isPresented: $showingNewGoal) {
             GoalEditor()
