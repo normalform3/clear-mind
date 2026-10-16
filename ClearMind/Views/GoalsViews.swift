@@ -211,6 +211,13 @@ struct GoalDetailView: View {
                         )
                     }
                 }
+
+                GoalDetailMonthCalendar(
+                    goal: goal,
+                    milestones: goal.milestones.filter { showCompletedMilestones || !$0.isCompleted },
+                    onCreateMilestone: createMilestone,
+                    onSelectMilestone: { editingMilestone = $0 }
+                )
             }
         }
         .navigationTitle("")
@@ -340,6 +347,246 @@ struct GoalDetailView: View {
         }
     }
 
+    private func createMilestone(on date: Date, title: String, colorKey: String) -> String? {
+        do {
+            try GoalMilestoneService.create(title: title, on: date, colorKey: colorKey, for: goal, in: modelContext)
+            return nil
+        } catch {
+            return "里程碑没有保存：\(error.localizedDescription)"
+        }
+    }
+
+}
+
+private struct GoalDetailMonthCalendar: View {
+    let goal: Goal
+    let milestones: [Milestone]
+    let onCreateMilestone: (Date, String, String) -> String?
+    let onSelectMilestone: (Milestone) -> Void
+
+    @State private var displayedMonth: Date
+    @State private var quickDate: Date?
+    @State private var quickTitle = ""
+    @State private var quickColorKey = "ochre"
+    @State private var quickError: String?
+    @FocusState private var isQuickTitleFocused: Bool
+
+    private let weekdaySymbols = ["一", "二", "三", "四", "五", "六", "日"]
+
+    init(
+        goal: Goal,
+        milestones: [Milestone],
+        onCreateMilestone: @escaping (Date, String, String) -> String?,
+        onSelectMilestone: @escaping (Milestone) -> Void
+    ) {
+        self.goal = goal
+        self.milestones = milestones
+        self.onCreateMilestone = onCreateMilestone
+        self.onSelectMilestone = onSelectMilestone
+        _displayedMonth = State(initialValue: GoalCalendarLogic.clampedMonth(
+            containing: .now,
+            goalStart: goal.startDate,
+            goalEnd: goal.endDate
+        ))
+    }
+
+    private var days: [GoalCalendarDay] {
+        GoalCalendarLogic.monthDays(
+            containing: displayedMonth,
+            currentWorkstreams: goal.workstreams,
+            milestones: milestones,
+            today: .now
+        )
+    }
+
+    private var monthTitle: String {
+        displayedMonth.formatted(
+            .dateTime.year().month(.wide).locale(Locale(identifier: "zh_CN"))
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Text("月历")
+                    .font(.system(size: 17, weight: .semibold))
+                Spacer()
+                monthButton(offset: -1, symbol: "chevron.left", label: "上个月")
+                Text(monthTitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CMTheme.textSecondary)
+                    .frame(minWidth: 92)
+                    .monospacedDigit()
+                monthButton(offset: 1, symbol: "chevron.right", label: "下个月")
+            }
+            QuietDivider()
+
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7),
+                spacing: 6
+            ) {
+                ForEach(weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(CMTheme.textTertiary)
+                        .frame(maxWidth: .infinity)
+                }
+                ForEach(days) { day in
+                    dayCell(day)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("goal-detail-month-calendar")
+        .onChange(of: goal.startDate) { _, _ in clampDisplayedMonth() }
+        .onChange(of: goal.endDate) { _, _ in clampDisplayedMonth() }
+    }
+
+    private func monthButton(offset: Int, symbol: String, label: String) -> some View {
+        let destination = GoalCalendarLogic.movedMonth(
+            from: displayedMonth,
+            offset: offset,
+            goalStart: goal.startDate,
+            goalEnd: goal.endDate
+        )
+        return Button {
+            if let destination {
+                displayedMonth = destination
+                quickDate = nil
+            }
+        } label: {
+            Image(systemName: symbol)
+                .frame(width: 26, height: 26)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(destination == nil ? CMTheme.textTertiary : CMTheme.textSecondary)
+        .disabled(destination == nil)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(offset < 0 ? "goal-month-previous" : "goal-month-next")
+    }
+
+    private func dayCell(_ day: GoalCalendarDay) -> some View {
+        let available = day.isInDisplayedMonth && GoalCalendarLogic.isDateAvailable(
+            day.date, goalStart: goal.startDate, goalEnd: goal.endDate
+        )
+        return ZStack(alignment: .topLeading) {
+            Button {
+                quickDate = day.date
+                quickTitle = ""
+                quickColorKey = "ochre"
+                quickError = nil
+            } label: {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(day.isCoveredByCurrentWorkstream ? CMTheme.color(for: "denim").opacity(0.09) : CMTheme.quietFill.opacity(0.35))
+                    .overlay {
+                        if day.isToday {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(CMTheme.color(for: "clay"), lineWidth: 1)
+                        }
+                    }
+                    .frame(height: 76)
+                    .contentShape(Rectangle())
+                    .overlay(alignment: .topLeading) {
+                        Text("\(Calendar.current.component(.day, from: day.date))")
+                            .font(.system(size: 12, weight: day.isToday ? .semibold : .regular))
+                            .foregroundStyle(available ? CMTheme.textPrimary : CMTheme.textTertiary.opacity(0.5))
+                            .padding(7)
+                    }
+            }
+            .buttonStyle(.plain)
+            .disabled(!available)
+            .accessibilityLabel("\(day.date.compactChineseDate)，添加里程碑")
+            .accessibilityIdentifier("goal-month-day-\(GoalCalendarLogic.dayKey(for: day.date))")
+            .popover(isPresented: Binding(
+                get: { quickDate == day.date },
+                set: { if !$0 { quickDate = nil } }
+            ), arrowEdge: .top) {
+                quickEntry(for: day.date)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(day.milestones.prefix(2)) { marker in
+                    if let milestone = milestones.first(where: { $0.id == marker.id }) {
+                        Button {
+                            onSelectMilestone(milestone)
+                        } label: {
+                            Label(marker.title, systemImage: "diamond.fill")
+                                .font(.system(size: 10))
+                                .lineLimit(1)
+                                .foregroundStyle(CMTheme.milestoneColor(for: marker.colorKey).opacity(marker.isCompleted ? 0.55 : 1))
+                        }
+                        .buttonStyle(.plain)
+                        .help(marker.title)
+                        .accessibilityIdentifier("goal-month-milestone-\(marker.title)")
+                    }
+                }
+
+                if day.milestones.count > 2 {
+                    Menu("+\(day.milestones.count - 2)") {
+                        ForEach(Array(day.milestones.dropFirst(2))) { marker in
+                            if let milestone = milestones.first(where: { $0.id == marker.id }) {
+                                Button(marker.title) { onSelectMilestone(milestone) }
+                            }
+                        }
+                    }
+                    .font(.system(size: 10))
+                    .menuStyle(.borderlessButton)
+                }
+            }
+            .padding(.horizontal, 7)
+            .padding(.top, 27)
+        }
+        .frame(maxWidth: .infinity, minHeight: 76, maxHeight: 76, alignment: .topLeading)
+    }
+
+    private func quickEntry(for date: Date) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(date.compactChineseDate) · 新增里程碑")
+                .font(.system(size: 13, weight: .semibold))
+            TextField("里程碑名称", text: $quickTitle)
+                .textFieldStyle(.roundedBorder)
+                .focused($isQuickTitleFocused)
+                .onSubmit { saveQuickEntry(on: date) }
+                .accessibilityIdentifier("goal-milestone-quick-title")
+            MilestoneColorSelector(selection: $quickColorKey)
+            if let quickError {
+                Text(quickError)
+                    .font(.system(size: 11))
+                    .foregroundStyle(CMTheme.color(for: "clay"))
+            }
+            HStack {
+                Spacer()
+                Button("取消") { quickDate = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button("保存") { saveQuickEntry(on: date) }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(quickTitle.trimmed.isEmpty)
+                    .accessibilityIdentifier("goal-milestone-quick-save")
+            }
+        }
+        .padding(16)
+        .frame(width: 280)
+        .onAppear { isQuickTitleFocused = true }
+    }
+
+    private func saveQuickEntry(on date: Date) {
+        guard !quickTitle.trimmed.isEmpty else { return }
+        if let error = onCreateMilestone(date, quickTitle.trimmed, quickColorKey) {
+            quickError = error
+        } else {
+            quickDate = nil
+            quickTitle = ""
+            quickError = nil
+        }
+    }
+
+    private func clampDisplayedMonth() {
+        displayedMonth = GoalCalendarLogic.clampedMonth(
+            containing: displayedMonth,
+            goalStart: goal.startDate,
+            goalEnd: goal.endDate
+        )
+    }
 }
 
 struct GoalEditor: View {
@@ -534,6 +781,7 @@ struct MilestoneEditor: View {
     @State private var details: String
     @State private var date: Date
     @State private var isCompleted: Bool
+    @State private var colorKey: String
 
     init(goal: Goal, milestone: Milestone? = nil) {
         self.goal = goal
@@ -542,6 +790,7 @@ struct MilestoneEditor: View {
         _details = State(initialValue: milestone?.details ?? "")
         _date = State(initialValue: milestone?.date ?? min(goal.endDate, max(goal.startDate, .now.startOfDay)))
         _isCompleted = State(initialValue: milestone?.isCompleted ?? false)
+        _colorKey = State(initialValue: milestone?.colorKey ?? "ochre")
     }
 
     private var canSave: Bool {
@@ -553,6 +802,7 @@ struct MilestoneEditor: View {
             SheetHeader(title: milestone == nil ? "添加里程碑" : "编辑里程碑", subtitle: "里程碑是一个明确的日期节点，不占据时间区间。")
             TextField("里程碑名称", text: $title).calmTextField()
             MultilineEditor(placeholder: "补充说明（可选）", text: $details).frame(height: 90)
+            MilestoneColorSelector(selection: $colorKey)
             HStack {
                 DatePicker("日期", selection: $date, in: goal.startDate...goal.endDate, displayedComponents: .date)
                 Toggle("已完成", isOn: $isCompleted).toggleStyle(.checkbox)
@@ -582,9 +832,59 @@ struct MilestoneEditor: View {
         target.details = details.trimmed
         target.date = date.startOfDay
         target.isCompleted = isCompleted
+        target.colorKey = colorKey
         if milestone == nil { goal.milestones.append(target) }
         goal.updatedAt = .now
         try? modelContext.save()
         dismiss()
+    }
+}
+
+private struct MilestoneColorSelector: View {
+    @Binding var selection: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Text("图标颜色")
+                .font(.system(size: 11))
+                .foregroundStyle(CMTheme.textSecondary)
+            ForEach(CMTheme.paletteKeys, id: \.self) { key in
+                Button {
+                    selection = key
+                } label: {
+                    Circle()
+                        .fill(CMTheme.color(for: key))
+                        .frame(width: 19, height: 19)
+                        .overlay {
+                            if selection == key {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .padding(3)
+                        .overlay {
+                            Circle()
+                                .strokeBorder(selection == key ? CMTheme.textPrimary : .clear, lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .help(colorName(for: key))
+                .accessibilityLabel(colorName(for: key))
+                .accessibilityValue(selection == key ? "已选择" : "未选择")
+                .accessibilityIdentifier("milestone-color-\(key)")
+            }
+        }
+    }
+
+    private func colorName(for key: String) -> String {
+        switch key {
+        case "sage": "鼠尾草绿"
+        case "clay": "陶土红"
+        case "denim": "牛仔蓝"
+        case "ochre": "赭黄"
+        case "plum": "梅紫"
+        default: "岩灰"
+        }
     }
 }

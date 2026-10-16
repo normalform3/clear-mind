@@ -69,6 +69,7 @@ struct MilestoneRecord: Codable {
     let details: String
     let date: Date
     let isCompleted: Bool
+    let colorKey: String?
     let createdAt: Date
 }
 
@@ -193,7 +194,7 @@ enum BackupService {
                         WorkstreamRecord(id: $0.id, title: $0.title, details: $0.details, startDate: $0.startDate, endDate: $0.endDate, statusRaw: $0.statusRaw, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
                     },
                     milestones: goal.milestones.map {
-                        MilestoneRecord(id: $0.id, title: $0.title, details: $0.details, date: $0.date, isCompleted: $0.isCompleted, createdAt: $0.createdAt)
+                        MilestoneRecord(id: $0.id, title: $0.title, details: $0.details, date: $0.date, isCompleted: $0.isCompleted, colorKey: $0.colorKey ?? "ochre", createdAt: $0.createdAt)
                     }
                 )
             },
@@ -330,7 +331,7 @@ enum BackupService {
                 ))
             }
             for item in record.milestones {
-                goal.milestones.append(Milestone(id: item.id, title: item.title, details: item.details, date: item.date, isCompleted: item.isCompleted, createdAt: item.createdAt))
+                goal.milestones.append(Milestone(id: item.id, title: item.title, details: item.details, date: item.date, isCompleted: item.isCompleted, colorKey: item.colorKey, createdAt: item.createdAt))
             }
         }
         GoalOrderLogic.normalizeIfNeeded(restoredGoals)

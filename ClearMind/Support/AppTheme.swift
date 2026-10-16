@@ -54,6 +54,11 @@ enum CMTheme {
         }
     }
 
+    static func milestoneColor(for key: String?) -> Color {
+        guard let key, paletteKeys.contains(key) else { return color(for: "ochre") }
+        return color(for: key)
+    }
+
     private static func adaptiveColor(light: NSColor, dark: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light

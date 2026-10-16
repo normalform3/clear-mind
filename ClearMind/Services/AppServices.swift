@@ -111,6 +111,54 @@ struct ScheduleBlockDraft: Identifiable, Equatable {
     }
 }
 
+enum ScheduleInlineField: Equatable {
+    case time
+    case scope
+    case task(UUID)
+    case newTask
+}
+
+struct ScheduleInlineEdit {
+    let blockID: UUID
+    let field: ScheduleInlineField
+    var draft: ScheduleBlockDraft
+    var errorMessage: String?
+
+    init(block: ScheduleBlock, field: ScheduleInlineField) {
+        blockID = block.id
+        self.field = field
+        draft = ScheduleBlockDraft(block: block)
+    }
+
+    @MainActor
+    func save(block: ScheduleBlock, template: ScheduleTemplate, in context: ModelContext) throws {
+        guard block.id == blockID, template.blocks.contains(where: { $0.id == blockID }) else {
+            throw ScheduleTableValidationFailure(issues: [draft.id: .missingSource])
+        }
+
+        // Re-read the row so a checkbox or another row's change made during editing is preserved.
+        var current = ScheduleBlockDraft(block: block)
+        switch field {
+        case .time:
+            guard current.startText != draft.startText || current.endText != draft.endText else { return }
+            current.startText = draft.startText
+            current.endText = draft.endText
+        case .scope:
+            guard current.scopeName != draft.scopeName else { return }
+            current.scopeName = draft.scopeName
+        case let .task(id):
+            guard let editedTask = draft.tasks.first(where: { $0.id == id }),
+                  let index = current.tasks.firstIndex(where: { $0.id == id }) else { return }
+            guard current.tasks[index].title != editedTask.title else { return }
+            current.tasks[index].title = editedTask.title
+        case .newTask:
+            guard let title = draft.tasks.first?.title, !title.trimmed.isEmpty else { return }
+            current.tasks.append(ScheduleTaskDraft(title: title))
+        }
+        try ScheduleBlockWriter.commit(current, block: block, template: template, in: context)
+    }
+}
+
 enum ScheduleTableValidationIssue: Equatable {
     case invalidTime
     case invalidRange
@@ -266,42 +314,47 @@ enum ScheduleBlockWriter {
             excluding: block?.id
         )
 
-        let scope = try ScopeService.resolve(name: draft.scopeName, in: context)
-        let target = block ?? ScheduleBlock(startMinute: startMinute, endMinute: endMinute)
-        target.startMinute = startMinute
-        target.endMinute = endMinute
-        target.scope = scope
-        target.updatedAt = .now
+        do {
+            let scope = try ScopeService.resolve(name: draft.scopeName, in: context)
+            let target = block ?? ScheduleBlock(startMinute: startMinute, endMinute: endMinute)
+            target.startMinute = startMinute
+            target.endMinute = endMinute
+            target.scope = scope
+            target.updatedAt = .now
 
-        if block == nil {
-            template.blocks.append(target)
-        }
-
-        let savedTasks = draft.tasks.filter { !$0.title.trimmed.isEmpty }
-        let savedIDs = Set(savedTasks.map(\.id))
-        for existing in target.checklistItems where !savedIDs.contains(existing.id) {
-            context.delete(existing)
-        }
-        target.checklistItems.removeAll { !savedIDs.contains($0.id) }
-
-        for (index, task) in savedTasks.enumerated() {
-            if let existing = target.checklistItems.first(where: { $0.id == task.id }) {
-                existing.title = task.title.trimmed
-                existing.isCompleted = task.isCompleted
-                existing.sortOrder = index
-            } else {
-                target.checklistItems.append(ScheduleChecklistItem(
-                    id: task.id,
-                    title: task.title.trimmed,
-                    isCompleted: task.isCompleted,
-                    sortOrder: index
-                ))
+            if block == nil {
+                template.blocks.append(target)
             }
-        }
 
-        template.updatedAt = .now
-        try context.save()
-        return target
+            let savedTasks = draft.tasks.filter { !$0.title.trimmed.isEmpty }
+            let savedIDs = Set(savedTasks.map(\.id))
+            for existing in target.checklistItems where !savedIDs.contains(existing.id) {
+                context.delete(existing)
+            }
+            target.checklistItems.removeAll { !savedIDs.contains($0.id) }
+
+            for (index, task) in savedTasks.enumerated() {
+                if let existing = target.checklistItems.first(where: { $0.id == task.id }) {
+                    existing.title = task.title.trimmed
+                    existing.isCompleted = task.isCompleted
+                    existing.sortOrder = index
+                } else {
+                    target.checklistItems.append(ScheduleChecklistItem(
+                        id: task.id,
+                        title: task.title.trimmed,
+                        isCompleted: task.isCompleted,
+                        sortOrder: index
+                    ))
+                }
+            }
+
+            template.updatedAt = .now
+            try context.save()
+            return target
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 }
 
@@ -574,11 +627,24 @@ struct GoalCalendarDay: Equatable, Identifiable {
     let isInDisplayedMonth: Bool
     let isToday: Bool
     let isCoveredByCurrentWorkstream: Bool
+    let milestones: [GoalCalendarMilestone]
 
     var id: Date { date }
 }
 
+struct GoalCalendarMilestone: Equatable, Identifiable {
+    let id: UUID
+    let title: String
+    let isCompleted: Bool
+    let colorKey: String?
+}
+
 enum GoalCalendarLogic {
+    static func dayKey(for date: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
     static func remainingDays(
         until endDate: Date,
         from date: Date,
@@ -592,6 +658,8 @@ enum GoalCalendarLogic {
     static func monthDays(
         containing date: Date,
         currentWorkstreams: [Workstream],
+        milestones: [Milestone] = [],
+        today: Date? = nil,
         calendar: Calendar = .current
     ) -> [GoalCalendarDay] {
         let day = calendar.startOfDay(for: date)
@@ -619,13 +687,100 @@ enum GoalCalendarLogic {
             return GoalCalendarDay(
                 date: normalizedGridDate,
                 isInDisplayedMonth: isInDisplayedMonth,
-                isToday: calendar.isDate(normalizedGridDate, inSameDayAs: day),
+                isToday: calendar.isDate(normalizedGridDate, inSameDayAs: today ?? day),
                 isCoveredByCurrentWorkstream: isInDisplayedMonth && currentWorkstreams.contains { workstream in
                     let start = calendar.startOfDay(for: workstream.startDate)
                     let end = calendar.startOfDay(for: workstream.endDate)
                     return start <= normalizedGridDate && normalizedGridDate <= end
-                }
+                },
+                milestones: isInDisplayedMonth
+                    ? milestones
+                        .filter { calendar.isDate($0.date, inSameDayAs: normalizedGridDate) }
+                        .sorted {
+                            $0.createdAt == $1.createdAt
+                                ? $0.title < $1.title
+                                : $0.createdAt < $1.createdAt
+                        }
+                        .map { GoalCalendarMilestone(id: $0.id, title: $0.title, isCompleted: $0.isCompleted, colorKey: $0.colorKey) }
+                    : []
             )
+        }
+    }
+
+    static func clampedMonth(
+        containing date: Date,
+        goalStart: Date,
+        goalEnd: Date,
+        calendar: Calendar = .current
+    ) -> Date {
+        func monthStart(_ value: Date) -> Date {
+            calendar.date(from: calendar.dateComponents([.year, .month], from: value)) ?? value.startOfDay
+        }
+        return min(max(monthStart(date), monthStart(goalStart)), monthStart(goalEnd))
+    }
+
+    static func movedMonth(
+        from date: Date,
+        offset: Int,
+        goalStart: Date,
+        goalEnd: Date,
+        calendar: Calendar = .current
+    ) -> Date? {
+        let month = clampedMonth(containing: date, goalStart: goalStart, goalEnd: goalEnd, calendar: calendar)
+        guard let candidate = calendar.date(byAdding: .month, value: offset, to: month),
+              clampedMonth(containing: candidate, goalStart: goalStart, goalEnd: goalEnd, calendar: calendar) == candidate
+        else { return nil }
+        return candidate
+    }
+
+    static func isDateAvailable(
+        _ date: Date,
+        goalStart: Date,
+        goalEnd: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        return calendar.startOfDay(for: goalStart) <= day && day <= calendar.startOfDay(for: goalEnd)
+    }
+}
+
+enum GoalMilestoneCreationError: LocalizedError {
+    case emptyTitle
+    case outsideGoal
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyTitle: "请填写里程碑名称。"
+        case .outsideGoal: "里程碑日期需要在目标周期内。"
+        }
+    }
+}
+
+@MainActor
+enum GoalMilestoneService {
+    @discardableResult
+    static func create(
+        title: String,
+        on date: Date,
+        colorKey: String? = nil,
+        for goal: Goal,
+        in context: ModelContext
+    ) throws -> Milestone {
+        let normalizedTitle = title.trimmed
+        guard !normalizedTitle.isEmpty else { throw GoalMilestoneCreationError.emptyTitle }
+        guard GoalCalendarLogic.isDateAvailable(date, goalStart: goal.startDate, goalEnd: goal.endDate) else {
+            throw GoalMilestoneCreationError.outsideGoal
+        }
+
+        let milestone = Milestone(title: normalizedTitle, date: date, colorKey: colorKey)
+        goal.milestones.append(milestone)
+        goal.updatedAt = .now
+        do {
+            try context.save()
+            return milestone
+        } catch {
+            context.rollback()
+            throw error
         }
     }
 }
@@ -956,6 +1111,81 @@ struct DashboardTimeContext {
     }
 }
 
+struct DashboardDaySegment: Identifiable {
+    let startMinute: Int
+    let endMinute: Int
+    let blockID: UUID?
+    let scopeName: String?
+    let colorKey: String?
+
+    var id: Int { startMinute }
+    var startFraction: Double { DashboardDayAxis.position(for: Double(startMinute)) }
+    var endFraction: Double { DashboardDayAxis.position(for: Double(endMinute)) }
+}
+
+enum DashboardDayAxis {
+    static func position(for minute: Double) -> Double {
+        let minute = min(max(minute, 0), 1440)
+        switch minute {
+        case ..<480: return minute / 480 * 0.1
+        case ..<1200: return 0.1 + (minute - 480) / 720 * 0.8
+        default: return 0.9 + (minute - 1200) / 240 * 0.1
+        }
+    }
+
+    static func minute(for fraction: Double) -> Double {
+        let fraction = min(max(fraction, 0), 1)
+        switch fraction {
+        case ..<0.1: return fraction / 0.1 * 480
+        case ..<0.9: return 480 + (fraction - 0.1) / 0.8 * 720
+        default: return 1200 + (fraction - 0.9) / 0.1 * 240
+        }
+    }
+}
+
+enum DashboardDaySegments {
+    static func segment(at minute: Int, in segments: [DashboardDaySegment]) -> DashboardDaySegment? {
+        segments.first {
+            minute >= $0.startMinute && (minute < $0.endMinute || minute == 1440 && $0.endMinute == 1440)
+        }
+    }
+
+    static func make(blocks: [ScheduleBlock]) -> [DashboardDaySegment] {
+        var segments: [DashboardDaySegment] = []
+        var cursor = 0
+        let sorted = blocks.sorted {
+            $0.startMinute == $1.startMinute
+                ? $0.endMinute < $1.endMinute
+                : $0.startMinute < $1.startMinute
+        }
+
+        for block in sorted {
+            let start = max(cursor, min(1440, block.startMinute))
+            let end = min(1440, block.endMinute)
+            guard end > start else { continue }
+            if start > cursor {
+                segments.append(DashboardDaySegment(
+                    startMinute: cursor, endMinute: start, blockID: nil,
+                    scopeName: nil, colorKey: nil
+                ))
+            }
+            segments.append(DashboardDaySegment(
+                startMinute: start, endMinute: end, blockID: block.id,
+                scopeName: block.scope?.name, colorKey: block.scope?.colorKey
+            ))
+            cursor = end
+        }
+
+        if cursor < 1440 {
+            segments.append(DashboardDaySegment(
+                startMinute: cursor, endMinute: 1440, blockID: nil,
+                scopeName: nil, colorKey: nil
+            ))
+        }
+        return segments
+    }
+}
+
 @MainActor
 enum AppBootstrapper {
     static func ensureDefaultTemplate(in context: ModelContext) throws {
@@ -968,6 +1198,21 @@ enum AppBootstrapper {
 
 @MainActor
 enum ScopeService {
+    static func updateColor(of scope: ScheduleScope, to colorKey: String, in context: ModelContext) throws {
+        guard CMTheme.paletteKeys.contains(colorKey) else {
+            throw ScopeColorError.invalidColor
+        }
+        guard scope.colorKey != colorKey else { return }
+
+        scope.colorKey = colorKey
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
     static func resolve(name: String, in context: ModelContext) throws -> ScheduleScope? {
         let trimmed = name.trimmed
         guard !trimmed.isEmpty else { return nil }
@@ -983,6 +1228,12 @@ enum ScopeService {
         context.insert(scope)
         return scope
     }
+}
+
+enum ScopeColorError: LocalizedError {
+    case invalidColor
+
+    var errorDescription: String? { "请选择提供的归属颜色。" }
 }
 
 @MainActor

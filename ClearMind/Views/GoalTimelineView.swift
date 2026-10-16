@@ -435,7 +435,7 @@ private struct TimelineLanes: View {
         } label: {
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(CMTheme.color(for: "ochre").opacity(0.65))
+                    .fill(CMTheme.milestoneColor(for: milestone.colorKey).opacity(0.65))
                     .frame(width: totalWidth, height: 1)
                 HStack(spacing: 7) {
                     Image(systemName: "diamond.fill")
@@ -445,7 +445,7 @@ private struct TimelineLanes: View {
                         .lineLimit(1)
                         .padding(.trailing, 7)
                 }
-                .foregroundStyle(CMTheme.color(for: "ochre"))
+                .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey))
                 .padding(.vertical, 4)
                 .padding(.leading, 8)
                 .background(CMTheme.canvas.opacity(0.92))

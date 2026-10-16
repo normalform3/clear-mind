@@ -3,7 +3,7 @@ import XCTest
 
 final class ClearMindUITests: XCTestCase {
     @MainActor
-    func testOverviewShowsDaylightArcAndTwelveHourTime() throws {
+    func testOverviewShowsSegmentedDayProgressAndTwentyFourHourTime() throws {
         let app = launchApp()
         let expectedDate = Date.now.formatted(
             .dateTime.year().month().day().weekday(.wide).locale(Locale(identifier: "zh_CN"))
@@ -19,11 +19,16 @@ final class ClearMindUITests: XCTestCase {
         let displayedTime = app.staticTexts["dashboard-time"]
         XCTAssertTrue(displayedTime.exists)
         XCTAssertTrue(app.descendants(matching: .any)["dashboard-date-time"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["dashboard-daylight-arc"].exists)
+        let progress = app.descendants(matching: .any)["dashboard-day-progress"]
+        XCTAssertTrue(progress.exists)
+        XCTAssertLessThanOrEqual(progress.frame.width, 330)
+        XCTAssertGreaterThan(progress.frame.minX, app.staticTexts["时间表"].frame.maxX)
+        XCTAssertFalse(app.descendants(matching: .any)["dashboard-daylight-arc"].exists)
+        XCTAssertFalse(app.staticTexts["dashboard-day-scale-480"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["dashboard-day-dial"].exists)
         let timeValue = try XCTUnwrap(displayedTime.value as? String)
         XCTAssertNotNil(
-            timeValue.range(of: #"^(上午|下午) \d{1,2}:\d{2}$"#, options: .regularExpression),
+            timeValue.range(of: #"^\d{2}:\d{2}$"#, options: .regularExpression),
             "顶部时间的实际值：\(timeValue)"
         )
         XCTAssertTrue(app.staticTexts["时间表"].exists)
@@ -37,29 +42,271 @@ final class ClearMindUITests: XCTestCase {
     }
 
     @MainActor
+    func testDayProgressHoverFitsMinimumWindowInDarkAppearance() throws {
+        let app = launchApp(arguments: ["--uitesting-dashboard-time-fixture", "--uitesting-dark-mode"])
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        let resizeHandle = window.coordinate(withNormalizedOffset: CGVector(dx: 0.995, dy: 0.995))
+        resizeHandle.press(forDuration: 0.2, thenDragTo: resizeHandle.withOffset(CGVector(dx: -300, dy: 0)))
+        XCTAssertLessThanOrEqual(window.frame.width, 1010, "应能缩至项目设置的 980 pt 最小宽度")
+
+        let progress = app.descendants(matching: .any)["dashboard-day-progress"]
+        let title = app.staticTexts["时间表"]
+        let edit = app.buttons["schedule-edit-toggle"]
+        XCTAssertTrue(progress.exists)
+        XCTAssertLessThanOrEqual(progress.frame.width, 330)
+        XCTAssertGreaterThan(progress.frame.minX, title.frame.maxX)
+        XCTAssertLessThan(progress.frame.maxX, edit.frame.minX)
+        let availableCenter = (title.frame.maxX + edit.frame.minX) / 2
+        XCTAssertLessThan(abs(progress.frame.midX - availableCenter), 32)
+
+        app.descendants(matching: .any)["dashboard-segment-55555555-5555-5555-5555-555555555555"].hover()
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard-day-hover"].waitForExistence(timeout: 2))
+        let captured = window.screenshot()
+        let screenshot = XCTAttachment(screenshot: captured)
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(captured.image.tiffRepresentation)))
+        let background = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 4, y: bitmap.pixelsHigh / 5))
+        XCTAssertLessThan(background.usingColorSpace(.deviceRGB)?.redComponent ?? 1, 0.3)
+        screenshot.name = "dashboard-progress-dark-narrow-hover"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    @MainActor
     func testOverviewHighlightsOnlyTheCurrentScheduleRow() throws {
         let app = launchApp(arguments: ["--uitesting-dashboard-time-fixture"])
 
         let displayedTime = app.staticTexts["dashboard-time"]
         XCTAssertTrue(displayedTime.waitForExistence(timeout: 5))
-        XCTAssertEqual(displayedTime.value as? String, "下午 2:30")
+        XCTAssertEqual(displayedTime.value as? String, "14:30")
         XCTAssertFalse(app.staticTexts["dashboard-current-schedule"].exists)
         XCTAssertFalse(app.staticTexts["dashboard-next-schedule"].exists)
 
-        XCTAssertTrue(app.staticTexts["14:00 – 15:00"].exists)
-        XCTAssertTrue(app.staticTexts["15:30 – 16:00"].exists)
+        XCTAssertEqual(app.buttons["schedule-inline-time-55555555-5555-5555-5555-555555555555"].label, "14:00 – 15:00")
+        XCTAssertEqual(app.buttons["schedule-inline-time-66666666-6666-6666-6666-666666666666"].label, "15:30 – 16:00")
+        let currentSegment = app.descendants(matching: .any)["dashboard-segment-55555555-5555-5555-5555-555555555555"]
+        XCTAssertTrue(currentSegment.exists)
+        XCTAssertTrue(currentSegment.label.contains("深度工作"))
+        currentSegment.hover()
+        let hover = app.descendants(matching: .any)["dashboard-day-hover"]
+        XCTAssertTrue(hover.waitForExistence(timeout: 2))
+        XCTAssertTrue(hover.label.contains("深度工作"), hover.label)
+        XCTAssertTrue(hover.label.contains("14:00"), hover.label)
+        XCTAssertTrue(hover.label.contains("准备材料"), hover.label)
+        XCTAssertTrue(hover.label.contains("另有 1 项任务"), hover.label)
+        XCTAssertTrue(app.staticTexts["dashboard-day-scale-480"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard-segment-66666666-6666-6666-6666-666666666666"].exists)
+        let gap = app.descendants(matching: .any)["dashboard-segment-gap-900"]
+        XCTAssertTrue(gap.exists)
+        gap.hover()
+        XCTAssertTrue(hover.label.contains("空档"), hover.label)
+        XCTAssertTrue(hover.label.contains("15:00"), hover.label)
+        app.staticTexts["dashboard-date"].hover()
+        XCTAssertFalse(hover.exists)
         let currentRows = app.descendants(matching: .any).matching(identifier: "schedule-current-block")
         XCTAssertEqual(currentRows.count, 1)
 
         let editScheduleButton = app.buttons["schedule-edit-toggle"]
         editScheduleButton.click()
-        XCTAssertTrue(app.buttons["schedule-add-row"].waitForExistence(timeout: 2))
+        let addRowButton = app.buttons["schedule-add-row"]
+        XCTAssertTrue(addRowButton.waitForExistence(timeout: 2))
+        let startFields = app.textFields.matching(identifier: "schedule-start-time")
+        XCTAssertGreaterThan(startFields.count, 0)
+        XCTAssertGreaterThan(addRowButton.frame.minY, startFields.element(boundBy: startFields.count - 1).frame.maxY)
+        let previousRowCount = startFields.count
+        addRowButton.click()
+        XCTAssertEqual(startFields.count, previousRowCount + 1)
         XCTAssertEqual(
             app.descendants(matching: .any).matching(identifier: "schedule-current-block").count,
             0,
             "编辑模式不应高亮尚未保存的安排"
         )
         app.typeKey(.escape, modifierFlags: [])
+    }
+
+    @MainActor
+    func testScheduleScopeColorPickerSavesSelectedPaletteColor() throws {
+        let app = launchApp(arguments: ["--uitesting-dashboard-time-fixture"])
+        let colorButton = app.buttons["schedule-scope-color-55555555-5555-5555-5555-555555555555"]
+        XCTAssertTrue(colorButton.waitForExistence(timeout: 5))
+
+        colorButton.click()
+        XCTAssertEqual(app.buttons["schedule-scope-color-option-denim"].value as? String, "已选择")
+        app.buttons["schedule-scope-color-option-plum"].click()
+
+        colorButton.click()
+        XCTAssertEqual(app.buttons["schedule-scope-color-option-plum"].value as? String, "已选择")
+    }
+
+    @MainActor
+    func testInlineTimeEditSavesBothTimesAfterLeavingTheGroup() throws {
+        let app = launchApp(arguments: ["--uitesting-dashboard-time-fixture"])
+        app.buttons["schedule-inline-time-55555555-5555-5555-5555-555555555555"].click()
+        let start = app.textFields["schedule-inline-start-55555555-5555-5555-5555-555555555555"]
+        let end = app.textFields["schedule-inline-end-55555555-5555-5555-5555-555555555555"]
+        XCTAssertTrue(start.exists)
+        XCTAssertTrue(end.exists)
+
+        end.click()
+        XCTAssertTrue(start.exists, "开始与结束输入框属于同一次编辑")
+        end.typeKey("a", modifierFlags: .command)
+        end.typeText("15:20")
+        app.staticTexts["dashboard-module-heading-goals"].click()
+
+        let savedTime = app.buttons["schedule-inline-time-55555555-5555-5555-5555-555555555555"]
+        XCTAssertTrue(savedTime.waitForExistence(timeout: 2))
+        XCTAssertEqual(savedTime.label, "14:00 – 15:20")
+        XCTAssertFalse(end.exists)
+    }
+
+    @MainActor
+    func testInlineTimeConflictKeepsEditorUntilCancelled() throws {
+        let app = launchApp(arguments: ["--uitesting-dashboard-time-fixture"])
+        app.buttons["schedule-inline-time-55555555-5555-5555-5555-555555555555"].click()
+        let end = app.textFields["schedule-inline-end-55555555-5555-5555-5555-555555555555"]
+        end.click()
+        end.typeKey("a", modifierFlags: .command)
+        end.typeText("15:40")
+        app.staticTexts["时间表"].click()
+
+        XCTAssertTrue(end.exists)
+        XCTAssertTrue(app.staticTexts["schedule-inline-error-55555555-5555-5555-5555-555555555555"].exists)
+        end.click()
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertEqual(app.buttons["schedule-inline-time-55555555-5555-5555-5555-555555555555"].label, "14:00 – 15:00")
+    }
+
+    @MainActor
+    func testInlineScopeTaskAndEmptyTaskSaveOnBlur() throws {
+        let app = launchApp(arguments: ["--uitesting-dashboard-time-fixture"])
+        app.buttons["schedule-inline-scope-55555555-5555-5555-5555-555555555555"].click()
+        let scope = app.textFields["schedule-inline-scope-input-55555555-5555-5555-5555-555555555555"]
+        scope.typeKey("a", modifierFlags: .command)
+        scope.typeText("写作")
+        app.staticTexts["时间表"].click()
+        XCTAssertEqual(app.buttons["schedule-inline-scope-55555555-5555-5555-5555-555555555555"].label, "写作")
+
+        app.buttons["schedule-inline-task-准备材料"].click()
+        let task = app.textFields["schedule-inline-task-input-准备材料"]
+        task.typeKey("a", modifierFlags: .command)
+        task.typeKey(.delete, modifierFlags: [])
+        app.staticTexts["时间表"].click()
+        XCTAssertFalse(app.buttons["schedule-inline-task-准备材料"].exists)
+
+        app.buttons["schedule-inline-empty-task-66666666-6666-6666-6666-666666666666"].click()
+        let newTask = app.textFields["schedule-inline-new-task-66666666-6666-6666-6666-666666666666"]
+        newTask.typeText("散步计划")
+        app.staticTexts["时间表"].click()
+        XCTAssertTrue(app.buttons["schedule-inline-task-散步计划"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testGoalMonthCalendarAddsMilestoneAndShowsSummaryMarker() throws {
+        let app = launchApp(arguments: ["--uitesting-goal-fixture"])
+        let goalCard = app.buttons["dashboard-goal-card-11111111-1111-1111-1111-111111111111"]
+        XCTAssertTrue(goalCard.waitForExistence(timeout: 5))
+        goalCard.click()
+
+        let calendar = app.descendants(matching: .any)["goal-detail-month-calendar"]
+        XCTAssertTrue(calendar.waitForExistence(timeout: 3))
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        let dayKey = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
+        let dayButton = app.buttons["goal-month-day-\(dayKey)"]
+        for _ in 0..<5 where !dayButton.isHittable {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(dayButton.isHittable)
+        dayButton.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.15)).click()
+
+        let title = app.textFields["goal-milestone-quick-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 2))
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertFalse(title.exists)
+        dayButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).click()
+        XCTAssertTrue(title.waitForExistence(timeout: 2))
+        title.click()
+        title.typeText("月历测试里程碑")
+        app.buttons["milestone-color-plum"].click()
+        XCTAssertEqual(app.buttons["milestone-color-plum"].value as? String, "已选择")
+        app.buttons["goal-milestone-quick-save"].click()
+        XCTAssertTrue(app.buttons["goal-month-milestone-月历测试里程碑"].waitForExistence(timeout: 2))
+        app.buttons["goal-month-milestone-月历测试里程碑"].click()
+        XCTAssertTrue(app.staticTexts["里程碑是一个明确的日期节点，不占据时间区间。"].waitForExistence(timeout: 2))
+        XCTAssertEqual(app.buttons["milestone-color-plum"].value as? String, "已选择")
+        app.buttons["取消"].click()
+
+        dayButton.click()
+        let secondTitle = app.textFields["goal-milestone-quick-title"]
+        XCTAssertTrue(secondTitle.waitForExistence(timeout: 2))
+        secondTitle.click()
+        secondTitle.typeText("第二个测试里程碑")
+        app.buttons["goal-milestone-quick-save"].click()
+
+        navigate(to: "overview", in: app)
+        let summaryCard = app.buttons["dashboard-goal-card-11111111-1111-1111-1111-111111111111"]
+        XCTAssertTrue(summaryCard.waitForExistence(timeout: 3))
+        XCTAssertTrue(summaryCard.label.contains("里程碑："), summaryCard.label)
+        for _ in 0..<5 where summaryCard.frame.maxY > app.windows.firstMatch.frame.maxY - 20 {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        summaryCard.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.05)).hover()
+        let baseline = app.windows.firstMatch.screenshot()
+        let dateCalendar = Calendar.current
+        let firstOfMonth = try XCTUnwrap(dateCalendar.date(
+            from: dateCalendar.dateComponents([.year, .month], from: Date.now)
+        ))
+        let leadingDays = (dateCalendar.component(.weekday, from: firstOfMonth) + 5) % 7
+        let dayIndex = leadingDays + dateCalendar.component(.day, from: Date.now) - 1
+        let column = dayIndex % 7
+        let row = dayIndex / 7
+        let cardWidth = summaryCard.frame.width
+        let cellWidth = (cardWidth - 36 - 6 * 4) / 7
+        let dayX = (18 + (CGFloat(column) + 0.5) * cellWidth + CGFloat(column) * 4) / cardWidth
+        let dayY = 1 - (57 + CGFloat(5 - row) * 34) / summaryCard.frame.height
+        summaryCard.coordinate(withNormalizedOffset: CGVector(dx: dayX, dy: dayY)).hover()
+        let hovered = app.windows.firstMatch.screenshot()
+        let calendarHoverScreenshot = XCTAttachment(screenshot: hovered)
+        calendarHoverScreenshot.name = "summary-calendar-hover"
+        calendarHoverScreenshot.lifetime = .keepAlways
+        add(calendarHoverScreenshot)
+        XCTAssertGreaterThan(
+            changedPixelsInRightHalf(of: summaryCard.frame, window: app.windows.firstMatch.frame,
+                                     before: baseline.image, after: hovered.image),
+            700,
+            "里程碑日期悬浮时，目标卡片内应出现明显的信息卡"
+        )
+        XCTAssertTrue(summaryCard.label.contains("第二个测试里程碑"))
+        summaryCard.click()
+        XCTAssertTrue(app.descendants(matching: .any)["goal-detail-month-calendar"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testGoalMonthCalendarDisablesDatesOutsideGoalPeriod() throws {
+        let app = launchApp(arguments: ["--uitesting-goal-fixture"])
+        app.buttons["dashboard-goal-card-11111111-1111-1111-1111-111111111111"].click()
+        let previous = app.buttons["goal-month-previous"]
+        XCTAssertTrue(previous.waitForExistence(timeout: 3))
+        for _ in 0..<5 where !previous.isHittable {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(previous.isHittable)
+        for _ in 0..<4 where previous.isEnabled {
+            previous.click()
+        }
+        XCTAssertFalse(previous.isEnabled)
+
+        let start = Calendar.current.date(byAdding: .day, value: -45, to: Calendar.current.startOfDay(for: .now))!
+        let beforeStart = Calendar.current.date(byAdding: .day, value: -1, to: start)!
+        if Calendar.current.isDate(beforeStart, equalTo: start, toGranularity: .month) {
+            let parts = Calendar.current.dateComponents([.year, .month, .day], from: beforeStart)
+            let key = String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
+            let day = app.buttons["goal-month-day-\(key)"]
+            for _ in 0..<5 where !day.exists {
+                app.scrollViews.firstMatch.swipeUp()
+            }
+            XCTAssertTrue(day.waitForExistence(timeout: 2))
+            XCTAssertFalse(day.isEnabled)
+        }
     }
 
     @MainActor
@@ -431,6 +678,34 @@ final class ClearMindUITests: XCTestCase {
         date.formatted(
             .dateTime.year().month().day().locale(Locale(identifier: "zh_CN"))
         )
+    }
+
+    private func changedPixelsInRightHalf(
+        of card: CGRect,
+        window: CGRect,
+        before: NSImage,
+        after: NSImage
+    ) -> Int {
+        guard let beforeData = before.tiffRepresentation,
+              let afterData = after.tiffRepresentation,
+              let beforeBitmap = NSBitmapImageRep(data: beforeData),
+              let afterBitmap = NSBitmapImageRep(data: afterData),
+              beforeBitmap.pixelsWide == afterBitmap.pixelsWide,
+              beforeBitmap.pixelsHigh == afterBitmap.pixelsHigh else { return 0 }
+        let scale = CGFloat(beforeBitmap.pixelsWide) / window.width
+        let minX = max(0, Int((card.midX - window.minX) * scale))
+        let maxX = min(beforeBitmap.pixelsWide, Int((card.maxX - window.minX) * scale))
+        let minY = max(0, Int((card.minY - window.minY) * scale))
+        let maxY = min(beforeBitmap.pixelsHigh, Int((card.maxY - window.minY) * scale))
+        var changed = 0
+        for y in stride(from: minY, to: maxY, by: 4) {
+            for x in stride(from: minX, to: maxX, by: 4) {
+                if beforeBitmap.colorAt(x: x, y: y) != afterBitmap.colorAt(x: x, y: y) {
+                    changed += 1
+                }
+            }
+        }
+        return changed
     }
 
     @MainActor

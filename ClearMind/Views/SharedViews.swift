@@ -126,23 +126,39 @@ struct DashboardModuleHeading<Trailing: View>: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 16) {
-            Text(title)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(CMTheme.textPrimary)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background {
-                    BrushHighlightShape()
-                        .fill(CMTheme.color(for: colorKey).opacity(0.16))
-                        .padding(.horizontal, -7)
-                        .padding(.vertical, -1)
-                        .offset(y: 2)
-                }
-                .accessibilityIdentifier(accessibilityIdentifier)
+            DashboardModuleTitle(title, colorKey: colorKey, accessibilityIdentifier: accessibilityIdentifier)
 
             Spacer()
             trailing
         }
+    }
+}
+
+struct DashboardModuleTitle: View {
+    let title: String
+    let colorKey: String
+    let accessibilityIdentifier: String
+
+    init(_ title: String, colorKey: String, accessibilityIdentifier: String) {
+        self.title = title
+        self.colorKey = colorKey
+        self.accessibilityIdentifier = accessibilityIdentifier
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(CMTheme.textPrimary)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background {
+                BrushHighlightShape()
+                    .fill(CMTheme.color(for: colorKey).opacity(0.16))
+                    .padding(.horizontal, -7)
+                    .padding(.vertical, -1)
+                    .offset(y: 2)
+            }
+            .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 
@@ -281,14 +297,18 @@ struct TagPills: View {
 
 struct GoalProgressCalendar: View {
     let currentWorkstreams: [Workstream]
+    let milestones: [Milestone]
     var referenceDate: Date = .now
+
+    @State private var hoveredDayKey: String?
 
     private let weekdaySymbols = ["一", "二", "三", "四", "五", "六", "日"]
 
     private var days: [GoalCalendarDay] {
         GoalCalendarLogic.monthDays(
             containing: referenceDate,
-            currentWorkstreams: currentWorkstreams
+            currentWorkstreams: currentWorkstreams,
+            milestones: milestones
         )
     }
 
@@ -298,14 +318,25 @@ struct GoalProgressCalendar: View {
         )
     }
 
+    private var hoveredDay: GoalCalendarDay? {
+        days.first { GoalCalendarLogic.dayKey(for: $0.date) == hoveredDayKey && !$0.milestones.isEmpty }
+    }
+
     private var accessibilitySummary: String {
         let today = referenceDate.formatted(
             .dateTime.month().day().locale(Locale(identifier: "zh_CN"))
         )
-        if currentWorkstreams.isEmpty {
-            return "今天是\(today)，当前没有推进项"
+        let progress = currentWorkstreams.isEmpty
+            ? "今天是\(today)，当前没有推进项"
+            : "今天是\(today)，处于\(currentWorkstreams.count)个推进项"
+        let visibleMilestones = milestones.filter {
+            Calendar.current.isDate($0.date, equalTo: referenceDate, toGranularity: .month)
         }
-        return "今天是\(today)，处于\(currentWorkstreams.count)个推进项"
+        guard !visibleMilestones.isEmpty else { return progress }
+        let entries = visibleMilestones.sorted { $0.date < $1.date }
+            .map { "\($0.date.compactChineseDate) \($0.title)" }
+            .joined(separator: "、")
+        return "\(progress)，里程碑：\(entries)"
     }
 
     var body: some View {
@@ -336,7 +367,16 @@ struct GoalProgressCalendar: View {
                 }
             }
         }
-        .accessibilityElement(children: .ignore)
+        .overlay(alignment: .topTrailing) {
+            if let hoveredDay {
+                milestoneHoverCard(for: hoveredDay)
+                    .frame(maxWidth: 210, alignment: .leading)
+                    .offset(y: 30)
+                    .allowsHitTesting(false)
+                    .zIndex(2)
+            }
+        }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(monthTitle)日历，\(accessibilitySummary)")
         .accessibilityIdentifier("goal-progress-calendar")
     }
@@ -363,16 +403,22 @@ struct GoalProgressCalendar: View {
 
     private func calendarCell(_ day: GoalCalendarDay) -> some View {
         let dayNumber = Calendar.current.component(.day, from: day.date)
-        return VStack(spacing: 0) {
+        return VStack(spacing: 1) {
             Text("\(dayNumber)")
                 .font(.system(size: 10, weight: day.isToday ? .semibold : .regular))
-            if day.isToday {
-                Text("今")
-                    .font(.system(size: 7, weight: .semibold))
-                    .foregroundStyle(CMTheme.color(for: "clay"))
-            } else {
-                Color.clear.frame(height: 8)
+            HStack(spacing: 2) {
+                if day.isToday {
+                    Text("今")
+                        .font(.system(size: 7, weight: .semibold))
+                        .foregroundStyle(CMTheme.color(for: "clay"))
+                }
+                ForEach(day.milestones.prefix(3)) { milestone in
+                    Image(systemName: "diamond.fill")
+                        .font(.system(size: 5))
+                        .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey).opacity(milestone.isCompleted ? 0.38 : 0.9))
+                }
             }
+            .frame(height: 8)
         }
         .foregroundStyle(day.isInDisplayedMonth ? CMTheme.textSecondary : CMTheme.textTertiary.opacity(0.42))
         .frame(maxWidth: .infinity, minHeight: 30)
@@ -386,6 +432,51 @@ struct GoalProgressCalendar: View {
                     .stroke(CMTheme.color(for: "clay"), lineWidth: 1.2)
             }
         }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            let key = GoalCalendarLogic.dayKey(for: day.date)
+            if hovering && !day.milestones.isEmpty {
+                hoveredDayKey = key
+            } else if hoveredDayKey == key {
+                hoveredDayKey = nil
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(day.date.compactChineseDate)\(day.isToday ? "，今天" : "")\(day.milestones.isEmpty ? "" : "，里程碑：" + day.milestones.map(\.title).joined(separator: "、"))"
+        )
+        .accessibilityIdentifier(
+            day.milestones.isEmpty
+                ? "goal-summary-day-\(GoalCalendarLogic.dayKey(for: day.date))"
+                : "goal-summary-milestone-\(GoalCalendarLogic.dayKey(for: day.date))"
+        )
+    }
+
+    private func milestoneHoverCard(for day: GoalCalendarDay) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(day.date.compactChineseDate)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(CMTheme.textPrimary)
+            ForEach(day.milestones) { milestone in
+                HStack(spacing: 6) {
+                    Image(systemName: "diamond.fill")
+                        .font(.system(size: 7))
+                        .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey).opacity(milestone.isCompleted ? 0.45 : 1))
+                    Text(milestone.title)
+                        .font(.system(size: 10))
+                        .foregroundStyle(CMTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(CMTheme.separator, lineWidth: 0.7))
+        .shadow(color: .black.opacity(0.08), radius: 5, y: 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(day.date.compactChineseDate)，里程碑：\(day.milestones.map(\.title).joined(separator: "、"))")
+        .accessibilityIdentifier("goal-summary-milestone-hover")
     }
 }
 
@@ -484,14 +575,14 @@ struct GoalSummaryCard: View {
 
             if showsProgressCalendar {
                 QuietDivider()
-                GoalProgressCalendar(currentWorkstreams: currentWorkstreams)
+                GoalProgressCalendar(currentWorkstreams: currentWorkstreams, milestones: goal.milestones)
             }
 
             if let nextMilestone {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "diamond.fill")
                         .font(.system(size: 7))
-                        .foregroundStyle(CMTheme.color(for: "ochre"))
+                        .foregroundStyle(CMTheme.milestoneColor(for: nextMilestone.colorKey))
                     Text(nextMilestone.title)
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)

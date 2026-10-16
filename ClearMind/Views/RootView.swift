@@ -126,6 +126,7 @@ struct RootView: View {
             }
         }
         .background(CMTheme.canvas)
+        .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--uitesting-dark-mode") ? .dark : nil)
         .sheet(isPresented: $showingQuickCapture) {
             QuickCaptureSheet()
         }
@@ -199,8 +200,8 @@ struct RootView: View {
     private func navigationMenuItem(for section: SidebarSection) -> some View {
         Toggle(isOn: Binding(
             get: { selection == section },
-            set: { isOn in
-                if isOn { navigate(to: section) }
+            set: { _ in
+                navigate(to: section)
             }
         )) {
             Label(section.title, systemImage: section.icon)

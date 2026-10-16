@@ -1,7 +1,48 @@
 import SwiftData
 import SwiftUI
 
+struct ScheduleInlineHitRegion: Equatable {
+    let blockID: UUID
+    let field: ScheduleInlineField
+    let frame: CGRect
+}
+
+struct ScheduleOutsideTap: Equatable {
+    let blockID: UUID
+    let field: ScheduleInlineField
+    let sequence: Int
+}
+
+struct ScheduleInlineHitRegionKey: PreferenceKey {
+    static let defaultValue: [ScheduleInlineHitRegion] = []
+
+    static func reduce(value: inout [ScheduleInlineHitRegion], nextValue: () -> [ScheduleInlineHitRegion]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private struct ScheduleInlineHitRegionModifier: ViewModifier {
+    let blockID: UUID
+    let field: ScheduleInlineField
+
+    func body(content: Content) -> some View {
+        content.background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: ScheduleInlineHitRegionKey.self,
+                    value: [ScheduleInlineHitRegion(
+                        blockID: blockID,
+                        field: field,
+                        frame: geometry.frame(in: .named("dashboard"))
+                    )]
+                )
+            }
+        }
+    }
+}
+
 struct ScheduleSection: View {
+    let outsideTap: ScheduleOutsideTap?
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ScheduleTemplate.createdAt) private var templates: [ScheduleTemplate]
     @Query(sort: \ScheduleScope.name) private var scopes: [ScheduleScope]
@@ -11,6 +52,7 @@ struct ScheduleSection: View {
     @State private var drafts: [ScheduleBlockDraft] = []
     @State private var rowIssues: [UUID: ScheduleTableValidationIssue] = [:]
     @State private var errorMessage: String?
+    @State private var inlineEdit: ScheduleInlineEdit?
 
     private var selectedTemplate: ScheduleTemplate? {
         ScheduleTemplateResolver.canonical(from: templates, selectedID: selectedTemplateID)
@@ -19,23 +61,28 @@ struct ScheduleSection: View {
     var body: some View {
         DashboardIslandSection {
             VStack(alignment: .leading, spacing: 18) {
-                DashboardModuleHeading(
-                    "时间表",
-                    colorKey: "sage",
-                    accessibilityIdentifier: "dashboard-module-heading-schedule"
-                ) {
-                    HStack(spacing: 8) {
-                        if isEditing {
-                            Button {
-                                drafts.append(ScheduleBlockDraft())
-                                rowIssues = [:]
-                            } label: {
-                                Label("新增一行", systemImage: "plus")
-                            }
-                            .buttonStyle(QuietButtonStyle())
-                            .accessibilityIdentifier("schedule-add-row")
-                        }
+                HStack(alignment: .center, spacing: 16) {
+                    DashboardModuleTitle(
+                        "时间表",
+                        colorKey: "sage",
+                        accessibilityIdentifier: "dashboard-module-heading-schedule"
+                    )
+                    .onTapGesture { _ = saveInlineEdit() }
 
+                    Spacer(minLength: 24)
+
+                    TimelineView(.everyMinute) { context in
+                        DashboardDayProgress(
+                            date: UITestFixtureSeeder.dashboardReferenceDate ?? context.date,
+                            blocks: selectedTemplate.map { sortedBlocks(in: $0) } ?? []
+                        )
+                    }
+                    .frame(maxWidth: 320)
+                    .layoutPriority(1)
+
+                    Spacer(minLength: 12)
+
+                    HStack(spacing: 8) {
                         if isEditing {
                             Button("取消", action: cancelEditing)
                                 .buttonStyle(QuietButtonStyle())
@@ -52,6 +99,7 @@ struct ScheduleSection: View {
                         }
                     }
                 }
+                .zIndex(1)
 
                 QuietDivider()
 
@@ -73,8 +121,15 @@ struct ScheduleSection: View {
         }
         .onAppear { ensureSelection() }
         .onChange(of: templates.count) { _, _ in ensureSelection() }
+        .onChange(of: outsideTap) { _, tap in
+            guard let tap,
+                  inlineEdit?.blockID == tap.blockID,
+                  inlineEdit?.field == tap.field else { return }
+            _ = saveInlineEdit()
+        }
         .onDisappear {
             if isEditing { cancelEditing() }
+            _ = saveInlineEdit()
         }
         .alert("无法完成操作", isPresented: Binding(
             get: { errorMessage != nil },
@@ -95,6 +150,7 @@ struct ScheduleSection: View {
 
         VStack(alignment: .leading, spacing: 0) {
             ScheduleTableHeader(isEditing: isEditing)
+                .onTapGesture { _ = saveInlineEdit() }
             QuietDivider()
 
             if isEditing {
@@ -117,6 +173,19 @@ struct ScheduleSection: View {
                         QuietDivider()
                     }
                 }
+                Button {
+                    drafts.append(ScheduleBlockDraft())
+                    rowIssues = [:]
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(QuietButtonStyle())
+                .accessibilityLabel("新增一行")
+                .accessibilityIdentifier("schedule-add-row")
+                .padding(.top, 8)
             } else if blocks.isEmpty {
                 EmptyState(
                     "还没有安排时间",
@@ -128,6 +197,10 @@ struct ScheduleSection: View {
                     ScheduleBlockRow(
                         block: block,
                         isCurrent: block.id == currentBlockID,
+                        inlineEdit: $inlineEdit,
+                        beginEdit: { field in beginInlineEdit(block: block, field: field) },
+                        commitEdit: { _ = saveInlineEdit() },
+                        cancelEdit: { inlineEdit = nil },
                         saveError: { errorMessage = $0 }
                     )
                     QuietDivider()
@@ -146,6 +219,7 @@ struct ScheduleSection: View {
 
     private func startEditing() {
         guard let selectedTemplate else { return }
+        guard saveInlineEdit() else { return }
         drafts = sortedBlocks(in: selectedTemplate).map(ScheduleBlockDraft.init(block:))
         rowIssues = [:]
         isEditing = true
@@ -182,6 +256,204 @@ struct ScheduleSection: View {
             selectedTemplateID = selectedTemplate.id.uuidString
         }
     }
+
+    private func beginInlineEdit(block: ScheduleBlock, field: ScheduleInlineField) {
+        if inlineEdit?.blockID == block.id && inlineEdit?.field == field { return }
+        guard saveInlineEdit() else { return }
+        inlineEdit = ScheduleInlineEdit(block: block, field: field)
+    }
+
+    @discardableResult
+    private func saveInlineEdit() -> Bool {
+        guard var edit = inlineEdit else { return true }
+        guard let selectedTemplate,
+              let block = selectedTemplate.blocks.first(where: { $0.id == edit.blockID }) else {
+            edit.errorMessage = ScheduleTableValidationIssue.missingSource.message
+            inlineEdit = edit
+            return false
+        }
+        do {
+            try edit.save(block: block, template: selectedTemplate, in: modelContext)
+            inlineEdit = nil
+            return true
+        } catch {
+            edit.errorMessage = error.localizedDescription
+            inlineEdit = edit
+            return false
+        }
+    }
+}
+
+private struct DashboardDayProgress: View {
+    let date: Date
+    let blocks: [ScheduleBlock]
+
+    @State private var hoveredMinute: Int?
+
+    private let labelMinutes = [0, 480, 720, 960, 1200, 1440]
+
+    private var segments: [DashboardDaySegment] {
+        DashboardDaySegments.make(blocks: blocks)
+    }
+
+    private var progress: Double {
+        DashboardDayAxis.position(for: DashboardTimeContext.resolve(at: date, blocks: blocks).dayProgress * 1440)
+    }
+
+    private var boundaries: [Int] {
+        Array(Set(segments.flatMap { [$0.startMinute, $0.endMinute] }))
+            .filter { $0 > 0 && $0 < 1440 }
+            .sorted()
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            ZStack(alignment: .topLeading) {
+                if let hoveredMinute,
+                   let segment = DashboardDaySegments.segment(at: hoveredMinute, in: segments) {
+                    let cardWidth = min(260, width)
+                    hoverCard(for: segment, at: hoveredMinute)
+                        .frame(width: cardWidth, alignment: .leading)
+                        .offset(
+                            x: max(0, min(width - cardWidth,
+                                          width * DashboardDayAxis.position(for: Double(hoveredMinute)) - cardWidth / 2)),
+                            y: 47
+                        )
+                        .allowsHitTesting(false)
+                        .zIndex(2)
+                }
+
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Capsule().fill(CMTheme.daylightArcTrack.opacity(0.12)))
+                        .frame(height: 10)
+
+                    ForEach(segments) { segment in
+                        Rectangle()
+                            .fill(segment.colorKey.map { CMTheme.color(for: $0).opacity(0.22) }
+                                ?? CMTheme.daylightArcTrack.opacity(0.18))
+                            .frame(width: width * (segment.endFraction - segment.startFraction), height: 10)
+                            .position(x: width * (segment.startFraction + segment.endFraction) / 2, y: 5)
+                            .accessibilityLabel(segmentLabel(segment))
+                            .accessibilityIdentifier(
+                                segment.blockID.map { "dashboard-segment-\($0.uuidString)" }
+                                    ?? "dashboard-segment-gap-\(segment.startMinute)"
+                            )
+                    }
+
+                    ForEach(segments) { segment in
+                        let elapsedEnd = min(segment.endFraction, progress)
+                        if elapsedEnd > segment.startFraction {
+                            Rectangle()
+                                .fill(segment.colorKey.map { CMTheme.color(for: $0).opacity(0.46) }
+                                    ?? CMTheme.daylightArcTrack.opacity(0.32))
+                                .frame(width: width * (elapsedEnd - segment.startFraction), height: 10)
+                                .position(x: width * (segment.startFraction + elapsedEnd) / 2, y: 5)
+                                .accessibilityHidden(true)
+                        }
+                    }
+
+                    ForEach(boundaries, id: \.self) { minute in
+                        Rectangle()
+                            .fill(CMTheme.canvas.opacity(0.62))
+                            .frame(width: 1, height: 8)
+                            .position(x: width * DashboardDayAxis.position(for: Double(minute)), y: 5)
+                            .accessibilityHidden(true)
+                    }
+
+                    Circle()
+                        .fill(CMTheme.canvas)
+                        .frame(width: 7, height: 7)
+                        .overlay(Circle().stroke(CMTheme.daylightArcAccent.opacity(0.8), lineWidth: 1))
+                        .position(x: width * progress, y: 5)
+                        .accessibilityHidden(true)
+                }
+                .frame(height: 10)
+                .clipShape(Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 0.6))
+                .offset(y: 15)
+                .allowsHitTesting(false)
+
+                if hoveredMinute != nil {
+                    ForEach(labelMinutes, id: \.self) { minute in
+                        Text(String(format: "%02d", minute / 60))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(CMTheme.daylightArcScale)
+                            .monospacedDigit()
+                            .frame(width: 18)
+                            .position(
+                                x: min(max(width * DashboardDayAxis.position(for: Double(minute)), 9), width - 9),
+                                y: 39
+                            )
+                            .accessibilityLabel(minute.clockText)
+                            .accessibilityIdentifier("dashboard-day-scale-\(minute)")
+                    }
+                }
+
+                Color.clear
+                    .frame(width: width, height: 34)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case let .active(location):
+                            hoveredMinute = Int(DashboardDayAxis.minute(for: Double(location.x / max(width, 1))))
+                        case .ended:
+                            hoveredMinute = nil
+                        }
+                    }
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(height: 46)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("一日进度，今天已过去约 \(Int((DashboardTimeContext.resolve(at: date, blocks: blocks).dayProgress * 100).rounded()))%")
+        .accessibilityIdentifier("dashboard-day-progress")
+    }
+
+    private func hoverCard(for segment: DashboardDaySegment, at minute: Int) -> some View {
+        let tasks = blocks.first(where: { $0.id == segment.blockID })?.checklistItems
+            .sorted { $0.sortOrder < $1.sortOrder } ?? []
+        let taskSummary = tasks.prefix(3).map(\.title).joined(separator: "、")
+        let remainingSummary = tasks.count > 3 ? "，另有 \(tasks.count - 3) 项任务" : ""
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("\(minute.clockText) · \(segmentLabel(segment))")
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+            Text("\(segment.startMinute.clockText) – \(segment.endMinute.clockText)")
+                .font(.system(size: 10))
+                .foregroundStyle(CMTheme.textSecondary)
+                .monospacedDigit()
+            ForEach(tasks.prefix(3)) { task in
+                Text("· \(task.title)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(CMTheme.textSecondary)
+                    .lineLimit(1)
+            }
+            if tasks.count > 3 {
+                Text("另有 \(tasks.count - 3) 项任务")
+                    .font(.system(size: 10))
+                    .foregroundStyle(CMTheme.textTertiary)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(CMTheme.separator, lineWidth: 0.7))
+        .shadow(color: .black.opacity(0.08), radius: 5, y: 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(minute.clockText)，\(segmentLabel(segment))，\(segment.startMinute.clockText) 至 \(segment.endMinute.clockText)"
+                + (taskSummary.isEmpty ? "" : "，\(taskSummary)\(remainingSummary)")
+        )
+        .accessibilityIdentifier("dashboard-day-hover")
+    }
+
+    private func segmentLabel(_ segment: DashboardDaySegment) -> String {
+        if let scopeName = segment.scopeName { return scopeName }
+        return segment.blockID == nil ? "空档" : "未填写归属"
+    }
 }
 
 private enum ScheduleTableMetrics {
@@ -214,72 +486,162 @@ private struct ScheduleTableHeader: View {
 }
 
 private struct ScheduleBlockRow: View {
+    private enum FocusedField: Hashable {
+        case start
+        case end
+        case scope
+        case task(UUID)
+        case newTask
+    }
+
     @Environment(\.modelContext) private var modelContext
+    @State private var isColorPickerPresented = false
+    @FocusState private var focusedField: FocusedField?
     let block: ScheduleBlock
     let isCurrent: Bool
+    @Binding var inlineEdit: ScheduleInlineEdit?
+    let beginEdit: (ScheduleInlineField) -> Void
+    let commitEdit: () -> Void
+    let cancelEdit: () -> Void
     let saveError: (String) -> Void
 
+    private var activeField: ScheduleInlineField? {
+        inlineEdit?.blockID == block.id ? inlineEdit?.field : nil
+    }
+
     var body: some View {
-        Grid(horizontalSpacing: ScheduleTableMetrics.spacing) {
-            GridRow(alignment: .top) {
-                Text("\(block.startMinute.clockText) – \(block.endMinute.clockText)")
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .foregroundStyle(CMTheme.textPrimary)
+        VStack(alignment: .leading, spacing: 5) {
+            Grid(horizontalSpacing: ScheduleTableMetrics.spacing) {
+                GridRow(alignment: .top) {
+                    Group {
+                        if activeField == .time {
+                            HStack(spacing: 4) {
+                                timeInput("开始", keyPath: \.startText, focus: .start,
+                                          identifier: "schedule-inline-start-\(block.id.uuidString)")
+                                Text("–").foregroundStyle(CMTheme.textTertiary)
+                                timeInput("结束", keyPath: \.endText, focus: .end,
+                                          identifier: "schedule-inline-end-\(block.id.uuidString)")
+                            }
+                        } else {
+                            Button {
+                                beginEdit(.time)
+                                focusAfterAppearance(.start)
+                            } label: {
+                                Text("\(block.startMinute.clockText) – \(block.endMinute.clockText)")
+                                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(CMTheme.textPrimary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("schedule-inline-time-\(block.id.uuidString)")
+                        }
+                    }
                     .frame(width: ScheduleTableMetrics.timeWidth, alignment: .leading)
 
-                Group {
-                    if let scope = block.scope {
-                        HStack(spacing: 7) {
-                            Circle()
-                                .fill(CMTheme.color(for: scope.colorKey))
-                                .frame(width: 7, height: 7)
-                            Text(scope.name).lineLimit(2)
+                    Group {
+                        if let scope = block.scope {
+                            HStack(spacing: 7) {
+                                Button {
+                                    isColorPickerPresented = true
+                                } label: {
+                                    Circle()
+                                        .fill(CMTheme.color(for: scope.colorKey))
+                                        .frame(width: 7, height: 7)
+                                        .frame(width: 20, height: 20)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("选择\(scope.name)的颜色")
+                                .accessibilityLabel("选择\(scope.name)的颜色")
+                                .accessibilityIdentifier("schedule-scope-color-\(block.id.uuidString)")
+                                .popover(isPresented: $isColorPickerPresented) {
+                                    colorPicker(for: scope)
+                                }
+                                scopeContent(scope.name)
+                            }
+                        } else {
+                            scopeContent("未填写")
                         }
-                    } else {
-                        Text("未填写")
-                            .foregroundStyle(CMTheme.textTertiary)
                     }
-                }
-                .font(.system(size: 13))
-                .frame(width: ScheduleTableMetrics.scopeWidth, alignment: .leading)
+                    .font(.system(size: 13))
+                    .frame(width: ScheduleTableMetrics.scopeWidth, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 9) {
-                    let items = block.checklistItems.sorted { $0.sortOrder < $1.sortOrder }
-                    if items.isEmpty {
-                        Text("-")
-                            .font(.system(size: 13))
-                            .foregroundStyle(CMTheme.textTertiary)
-                            .accessibilityIdentifier("schedule-empty-tasks")
-                    } else {
-                        ForEach(items) { item in
-                            HStack(spacing: 8) {
-                                Toggle("", isOn: Binding(
-                                    get: { item.isCompleted },
-                                    set: { value in
-                                        item.isCompleted = value
-                                        do {
-                                            try modelContext.save()
-                                        } catch {
-                                            saveError(error.localizedDescription)
+                    VStack(alignment: .leading, spacing: 9) {
+                        let items = block.checklistItems.sorted { $0.sortOrder < $1.sortOrder }
+                        if items.isEmpty {
+                            if activeField == .newTask {
+                                TextField("增加一项具体任务", text: taskTextBinding(taskID: nil))
+                                    .scheduleInputStyle()
+                                    .focused($focusedField, equals: .newTask)
+                                    .onSubmit(commitEdit)
+                                    .onExitCommand(perform: cancelEdit)
+                                    .modifier(ScheduleInlineHitRegionModifier(blockID: block.id, field: .newTask))
+                                    .accessibilityIdentifier("schedule-inline-new-task-\(block.id.uuidString)")
+                            } else {
+                                Button {
+                                    beginEdit(.newTask)
+                                    focusAfterAppearance(.newTask)
+                                } label: {
+                                    Text("-")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(CMTheme.textTertiary)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("schedule-inline-empty-task-\(block.id.uuidString)")
+                            }
+                        } else {
+                            ForEach(items) { item in
+                                HStack(spacing: 8) {
+                                    Toggle("", isOn: Binding(
+                                        get: { item.isCompleted },
+                                        set: { value in
+                                            item.isCompleted = value
+                                            do {
+                                                try modelContext.save()
+                                            } catch {
+                                                saveError(error.localizedDescription)
+                                            }
                                         }
-                                    }
-                                ))
-                                .labelsHidden()
-                                .toggleStyle(.checkbox)
+                                    ))
+                                    .labelsHidden()
+                                    .toggleStyle(.checkbox)
 
-                                Text(item.title)
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(item.isCompleted ? CMTheme.textTertiary : CMTheme.textPrimary)
-                                    .strikethrough(item.isCompleted, color: CMTheme.textTertiary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    if activeField == .task(item.id) {
+                                        TextField("具体任务", text: taskTextBinding(taskID: item.id))
+                                            .scheduleInputStyle()
+                                            .focused($focusedField, equals: .task(item.id))
+                                            .onSubmit(commitEdit)
+                                            .onExitCommand(perform: cancelEdit)
+                                            .modifier(ScheduleInlineHitRegionModifier(blockID: block.id, field: .task(item.id)))
+                                            .accessibilityIdentifier("schedule-inline-task-input-\(item.title)")
+                                    } else {
+                                        Button {
+                                            beginEdit(.task(item.id))
+                                            focusAfterAppearance(.task(item.id))
+                                        } label: {
+                                            Text(item.title)
+                                                .font(.system(size: 13))
+                                                .foregroundStyle(item.isCompleted ? CMTheme.textTertiary : CMTheme.textPrimary)
+                                                .strikethrough(item.isCompleted, color: CMTheme.textTertiary)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityIdentifier("schedule-inline-task-\(item.title)")
+                                    }
+                                }
                             }
                         }
                     }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                Color.clear
-                    .frame(width: ScheduleTableMetrics.actionWidth, height: 1)
+                    Color.clear
+                        .frame(width: ScheduleTableMetrics.actionWidth, height: 1)
+                }
+            }
+            if let message = inlineEdit?.blockID == block.id ? inlineEdit?.errorMessage : nil {
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(CMTheme.color(for: "clay"))
+                    .accessibilityIdentifier("schedule-inline-error-\(block.id.uuidString)")
             }
         }
         .padding(.vertical, CMTheme.rowVerticalPadding)
@@ -289,6 +651,156 @@ private struct ScheduleBlockRow: View {
             isCurrent ? "schedule-current-block" : "schedule-block-\(block.id.uuidString)"
         )
         .accessibilityValue(isCurrent ? "当前安排" : "")
+        .onChange(of: focusedField) { oldValue, newValue in
+            guard oldValue != nil, newValue == nil else { return }
+            DispatchQueue.main.async {
+                if focusedField == nil, let oldValue, focusMatchesActive(oldValue) {
+                    commitEdit()
+                    if activeField != nil { focusedField = oldValue }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func scopeContent(_ title: String) -> some View {
+        if activeField == .scope {
+            TextField("例如：工作", text: inlineTextBinding(\.scopeName))
+                .scheduleInputStyle()
+                .focused($focusedField, equals: .scope)
+                .onSubmit(commitEdit)
+                .onExitCommand(perform: cancelEdit)
+                .modifier(ScheduleInlineHitRegionModifier(blockID: block.id, field: .scope))
+                .accessibilityIdentifier("schedule-inline-scope-input-\(block.id.uuidString)")
+        } else {
+            Button {
+                beginEdit(.scope)
+                focusAfterAppearance(.scope)
+            } label: {
+                Text(title)
+                    .lineLimit(2)
+                    .foregroundStyle(block.scope == nil ? CMTheme.textTertiary : CMTheme.textPrimary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("schedule-inline-scope-\(block.id.uuidString)")
+        }
+    }
+
+    private func timeInput(
+        _ label: String,
+        keyPath: WritableKeyPath<ScheduleBlockDraft, String>,
+        focus: FocusedField,
+        identifier: String
+    ) -> some View {
+        TextField(label, text: inlineTextBinding(keyPath))
+            .textFieldStyle(.plain)
+            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .multilineTextAlignment(.center)
+            .padding(.vertical, 7)
+            .frame(width: 64)
+            .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(CMTheme.separator, lineWidth: 0.7))
+            .focused($focusedField, equals: focus)
+            .onSubmit(commitEdit)
+            .onExitCommand(perform: cancelEdit)
+            .modifier(ScheduleInlineHitRegionModifier(blockID: block.id, field: .time))
+            .accessibilityIdentifier(identifier)
+    }
+
+    private func inlineTextBinding(_ keyPath: WritableKeyPath<ScheduleBlockDraft, String>) -> Binding<String> {
+        Binding(
+            get: { inlineEdit?.draft[keyPath: keyPath] ?? "" },
+            set: { value in
+                guard inlineEdit?.blockID == block.id else { return }
+                inlineEdit?.draft[keyPath: keyPath] = value
+                inlineEdit?.errorMessage = nil
+            }
+        )
+    }
+
+    private func taskTextBinding(taskID: UUID?) -> Binding<String> {
+        Binding(
+            get: {
+                let tasks = inlineEdit?.draft.tasks ?? []
+                return taskID.flatMap { id in tasks.first(where: { $0.id == id })?.title }
+                    ?? (taskID == nil ? tasks.first?.title ?? "" : "")
+            },
+            set: { value in
+                guard inlineEdit?.blockID == block.id else { return }
+                let index = taskID.flatMap { id in inlineEdit?.draft.tasks.firstIndex(where: { $0.id == id }) }
+                    ?? (taskID == nil ? 0 : nil)
+                guard let index, inlineEdit?.draft.tasks.indices.contains(index) == true else { return }
+                inlineEdit?.draft.tasks[index].title = value
+                inlineEdit?.errorMessage = nil
+            }
+        )
+    }
+
+    private func focusAfterAppearance(_ field: FocusedField) {
+        DispatchQueue.main.async {
+            if activeField != nil { focusedField = field }
+        }
+    }
+
+    private func focusMatchesActive(_ focus: FocusedField) -> Bool {
+        switch (focus, activeField) {
+        case (.start, .time), (.end, .time), (.scope, .scope), (.newTask, .newTask): true
+        case let (.task(id), .task(activeID)): id == activeID
+        default: false
+        }
+    }
+
+    private func colorPicker(for scope: ScheduleScope) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(scope.name)的颜色")
+                .font(.system(size: 12, weight: .semibold))
+
+            HStack(spacing: 7) {
+                ForEach(CMTheme.paletteKeys, id: \.self) { key in
+                    Button {
+                        do {
+                            try ScopeService.updateColor(of: scope, to: key, in: modelContext)
+                            isColorPickerPresented = false
+                        } catch {
+                            saveError(error.localizedDescription)
+                        }
+                    } label: {
+                        Circle()
+                            .fill(CMTheme.color(for: key))
+                            .frame(width: 19, height: 19)
+                            .overlay {
+                                if scope.colorKey == key {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .padding(3)
+                            .overlay {
+                                Circle()
+                                    .strokeBorder(scope.colorKey == key ? CMTheme.textPrimary : .clear, lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help(colorName(for: key))
+                    .accessibilityLabel(colorName(for: key))
+                    .accessibilityValue(scope.colorKey == key ? "已选择" : "未选择")
+                    .accessibilityIdentifier("schedule-scope-color-option-\(key)")
+                }
+            }
+        }
+        .padding(12)
+    }
+
+    private func colorName(for key: String) -> String {
+        switch key {
+        case "sage": "鼠尾草绿"
+        case "clay": "陶土红"
+        case "denim": "牛仔蓝"
+        case "ochre": "赭黄"
+        case "plum": "梅紫"
+        default: "岩灰"
+        }
     }
 }
 

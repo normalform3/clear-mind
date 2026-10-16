@@ -161,6 +161,7 @@ final class Milestone {
     var details: String
     var date: Date
     var isCompleted: Bool
+    var colorKey: String?
     var createdAt: Date
     var goal: Goal?
 
@@ -170,6 +171,7 @@ final class Milestone {
         details: String = "",
         date: Date,
         isCompleted: Bool = false,
+        colorKey: String? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
@@ -177,6 +179,7 @@ final class Milestone {
         self.details = details
         self.date = date.startOfDay
         self.isCompleted = isCompleted
+        self.colorKey = colorKey
         self.createdAt = createdAt
     }
 }

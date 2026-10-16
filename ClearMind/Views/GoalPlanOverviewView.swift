@@ -419,7 +419,7 @@ struct GoalPlanOverviewView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "diamond.fill")
                         .font(.system(size: 7))
-                        .foregroundStyle(CMTheme.color(for: "ochre"))
+                        .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey))
                     Text(milestone.title)
                         .lineLimit(1)
                     Spacer(minLength: 4)
@@ -438,7 +438,7 @@ struct GoalPlanOverviewView: View {
                     .frame(width: plotWidth, height: 2)
                 Image(systemName: "diamond.fill")
                     .font(.system(size: 10))
-                    .foregroundStyle(CMTheme.color(for: "ochre"))
+                    .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey))
                     .offset(x: x - 5)
                 Button { onSelectMilestone(milestone) } label: {
                     Color.clear

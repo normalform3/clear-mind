@@ -228,6 +228,96 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<ScheduleScope>()), 1)
     }
 
+    func testInlineEditSkipsUnchangedValueAndRejectsConflictingTime() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let template = ScheduleTemplate(name: "默认日")
+        let first = ScheduleBlock(startMinute: 840, endMinute: 900)
+        let second = ScheduleBlock(startMinute: 930, endMinute: 960)
+        template.blocks.append(contentsOf: [first, second])
+        context.insert(template)
+        try context.save()
+        let originalUpdatedAt = first.updatedAt
+
+        let unchanged = ScheduleInlineEdit(block: first, field: .time)
+        try unchanged.save(block: first, template: template, in: context)
+        XCTAssertEqual(first.updatedAt, originalUpdatedAt)
+
+        var conflicting = ScheduleInlineEdit(block: first, field: .time)
+        conflicting.draft.endText = "15:40"
+        XCTAssertThrowsError(try conflicting.save(block: first, template: template, in: context))
+        XCTAssertEqual(first.endMinute, 900)
+
+        var malformed = ScheduleInlineEdit(block: first, field: .time)
+        malformed.draft.startText = "下午两点"
+        XCTAssertThrowsError(try malformed.save(block: first, template: template, in: context)) {
+            XCTAssertEqual($0 as? ScheduleTimeInputError, .invalidFormat)
+        }
+        XCTAssertEqual(first.startMinute, 840)
+        XCTAssertEqual(try ModelContext(container).fetch(FetchDescriptor<ScheduleBlock>())
+            .first(where: { $0.id == first.id })?.startMinute, 840)
+    }
+
+    func testInlineEditReassignsOnlyCurrentScopeAndDeletesClearedTask() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let template = ScheduleTemplate(name: "默认日")
+        let sharedScope = ScheduleScope(name: "实习", colorKey: "denim")
+        let first = ScheduleBlock(startMinute: 840, endMinute: 900, scope: sharedScope)
+        let second = ScheduleBlock(startMinute: 930, endMinute: 960, scope: sharedScope)
+        first.checklistItems.append(ScheduleChecklistItem(title: "准备材料"))
+        template.blocks.append(contentsOf: [first, second])
+        context.insert(template)
+        try context.save()
+
+        var scopeEdit = ScheduleInlineEdit(block: first, field: .scope)
+        scopeEdit.draft.scopeName = "写作"
+        try scopeEdit.save(block: first, template: template, in: context)
+        XCTAssertEqual(first.scope?.name, "写作")
+        XCTAssertEqual(second.scope?.id, sharedScope.id)
+        XCTAssertEqual(try ModelContext(container).fetch(FetchDescriptor<ScheduleBlock>())
+            .first(where: { $0.id == first.id })?.scope?.name, "写作")
+
+        var taskEdit = ScheduleInlineEdit(block: first, field: .task(first.checklistItems[0].id))
+        taskEdit.draft.tasks[0].title = ""
+        try taskEdit.save(block: first, template: template, in: context)
+        XCTAssertTrue(first.checklistItems.isEmpty)
+
+        var newTaskEdit = ScheduleInlineEdit(block: first, field: .newTask)
+        newTaskEdit.draft.tasks[0].title = "新任务"
+        try newTaskEdit.save(block: first, template: template, in: context)
+        XCTAssertEqual(first.checklistItems.map(\.title), ["新任务"])
+    }
+
+    func testChangingScopeColorPersistsForEveryBlockAndDaySegment() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let template = ScheduleTemplate(name: "默认日")
+        let scope = ScheduleScope(name: "深度工作", colorKey: "denim")
+        template.blocks.append(ScheduleBlock(startMinute: 540, endMinute: 600, scope: scope))
+        template.blocks.append(ScheduleBlock(startMinute: 840, endMinute: 900, scope: scope))
+        context.insert(template)
+        try context.save()
+
+        try ScopeService.updateColor(of: scope, to: "plum", in: context)
+
+        let reloadedScope = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<ScheduleScope>()).first)
+        XCTAssertEqual(reloadedScope.colorKey, "plum")
+        XCTAssertEqual(Set(template.blocks.compactMap { $0.scope?.id }), [scope.id])
+        XCTAssertEqual(DashboardDaySegments.make(blocks: template.blocks).compactMap(\.colorKey), ["plum", "plum"])
+    }
+
+    func testChangingScopeColorRejectsUnknownPaletteKey() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let scope = ScheduleScope(name: "深度工作", colorKey: "denim")
+        context.insert(scope)
+        try context.save()
+
+        XCTAssertThrowsError(try ScopeService.updateColor(of: scope, to: "unknown", in: context))
+        XCTAssertEqual(scope.colorKey, "denim")
+    }
+
     func testCanonicalScheduleUsesSelectionThenFallsBackToEarliestTemplate() {
         let early = ScheduleTemplate(
             name: "早期",
@@ -342,6 +432,99 @@ final class ClearMindTests: XCTestCase {
             calendar: calendar
         )
         XCTAssertNil(afterAll.currentBlock)
+    }
+
+    func testDashboardDaySegmentsPreserveGapsAndAdjacentBoundaries() {
+        let first = ScheduleBlock(startMinute: 14 * 60, endMinute: 15 * 60)
+        let second = ScheduleBlock(startMinute: 15 * 60, endMinute: 16 * 60)
+        let segments = DashboardDaySegments.make(blocks: [second, first])
+
+        XCTAssertEqual(segments.map(\.startMinute), [0, 840, 900, 960])
+        XCTAssertEqual(segments.map(\.endMinute), [840, 900, 960, 1440])
+        XCTAssertEqual(segments.map(\.blockID), [nil, first.id, second.id, nil])
+        XCTAssertEqual(segments[1].startFraction, 0.5, accuracy: 0.000_001)
+        XCTAssertEqual(segments[1].endFraction, 0.566_666_667, accuracy: 0.000_001)
+        XCTAssertEqual(DashboardDaySegments.make(blocks: []).map(\.endMinute), [1440])
+    }
+
+    func testDashboardDaySegmentsCompressNightHoursWithoutLosingBoundaryTimes() {
+        let early = ScheduleBlock(startMinute: 7 * 60, endMinute: 9 * 60)
+        let late = ScheduleBlock(startMinute: 19 * 60, endMinute: 21 * 60)
+        let segments = DashboardDaySegments.make(blocks: [late, early])
+
+        XCTAssertEqual(segments[1].startFraction, 0.0875, accuracy: 0.000_001)
+        XCTAssertEqual(segments[1].endFraction, 0.166_666_667, accuracy: 0.000_001)
+        XCTAssertEqual(segments[3].startFraction, 0.833_333_333, accuracy: 0.000_001)
+        XCTAssertEqual(segments[3].endFraction, 0.925, accuracy: 0.000_001)
+    }
+
+    func testDashboardDaySegmentsCoverStartAndEndOfDay() {
+        let wholeDay = ScheduleBlock(startMinute: 0, endMinute: 1440)
+        let segments = DashboardDaySegments.make(blocks: [wholeDay])
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments[0].startFraction, 0)
+        XCTAssertEqual(segments[0].endFraction, 1)
+    }
+
+    func testDashboardDayAxisInvertsCompressedHoursAndClampsEdges() {
+        for minute in [0.0, 60, 420, 480, 720, 960, 1200, 1260, 1440] {
+            XCTAssertEqual(
+                DashboardDayAxis.minute(for: DashboardDayAxis.position(for: minute)),
+                minute,
+                accuracy: 0.000_001
+            )
+        }
+        XCTAssertEqual(DashboardDayAxis.minute(for: -1), 0)
+        XCTAssertEqual(DashboardDayAxis.minute(for: 2), 1440)
+    }
+
+    func testDashboardDayHoverFindsShortNightSegmentAndBoundaryGap() {
+        let early = ScheduleBlock(startMinute: 7 * 60, endMinute: 8 * 60)
+        let late = ScheduleBlock(startMinute: 20 * 60, endMinute: 21 * 60)
+        let segments = DashboardDaySegments.make(blocks: [early, late])
+
+        XCTAssertEqual(DashboardDaySegments.segment(at: 7 * 60, in: segments)?.blockID, early.id)
+        XCTAssertEqual(DashboardDaySegments.segment(at: 8 * 60, in: segments)?.blockID, nil)
+        XCTAssertEqual(DashboardDaySegments.segment(at: 20 * 60, in: segments)?.blockID, late.id)
+        XCTAssertEqual(DashboardDaySegments.segment(at: 1440, in: segments)?.endMinute, 1440)
+    }
+
+    func testDashboardRendersAtMinimumWindowWidthInLightAndDark() throws {
+        let container = try makeContainer()
+        let template = ScheduleTemplate(name: "默认日")
+        template.blocks.append(ScheduleBlock(startMinute: 8 * 60, endMinute: 20 * 60))
+        container.mainContext.insert(template)
+        try container.mainContext.save()
+
+        for (name, scheme, appearance) in [
+            ("light", ColorScheme.light, NSAppearance.Name.aqua),
+            ("dark", ColorScheme.dark, NSAppearance.Name.darkAqua)
+        ] {
+            let hostingView = NSHostingView(rootView:
+                DashboardView(onNavigate: { _ in })
+                    .modelContainer(container)
+                    .environment(\.colorScheme, scheme)
+                    .frame(width: 980, height: 680, alignment: .topLeading)
+            )
+            hostingView.frame = NSRect(x: 0, y: 0, width: 980, height: 680)
+            let window = NSWindow(contentRect: hostingView.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: appearance)
+            window.contentView = hostingView
+            window.orderFront(nil)
+            hostingView.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+
+            let bitmap = try XCTUnwrap(hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds))
+            hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+            XCTAssertGreaterThanOrEqual(bitmap.pixelsWide, 980)
+            XCTAssertGreaterThanOrEqual(bitmap.pixelsHigh, 680)
+            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+            attachment.name = "dashboard-980-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            window.orderOut(nil)
+        }
     }
 
     func testGoalBoundaryValidation() {
@@ -606,6 +789,71 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(byDate[september30]).isCoveredByCurrentWorkstream, true)
         XCTAssertEqual(try XCTUnwrap(byDate[october1]).isInDisplayedMonth, false)
         XCTAssertEqual(try XCTUnwrap(byDate[october1]).isCoveredByCurrentWorkstream, false)
+    }
+
+    func testGoalCalendarSeparatesDisplayedMonthFromTodayAndGroupsMilestones() throws {
+        let calendar = Calendar.current
+        let today = calendar.date(from: DateComponents(year: 2026, month: 10, day: 12))!
+        let september17 = calendar.date(from: DateComponents(year: 2026, month: 9, day: 17))!
+        let first = Milestone(title: "初稿", date: september17, colorKey: "plum")
+        let second = Milestone(title: "评审", date: september17, isCompleted: true)
+        let days = GoalCalendarLogic.monthDays(
+            containing: september17,
+            currentWorkstreams: [],
+            milestones: [second, first],
+            today: today,
+            calendar: calendar
+        )
+
+        XCTAssertFalse(days.contains(where: \.isToday))
+        let target = try XCTUnwrap(days.first { calendar.isDate($0.date, inSameDayAs: september17) })
+        XCTAssertEqual(target.milestones.map(\.title), ["初稿", "评审"])
+        XCTAssertEqual(target.milestones.map(\.isCompleted), [false, true])
+        XCTAssertEqual(target.milestones.map(\.colorKey), ["plum", nil])
+        XCTAssertEqual(
+            GoalCalendarLogic.clampedMonth(containing: today, goalStart: september17, goalEnd: september17, calendar: calendar),
+            calendar.date(from: DateComponents(year: 2026, month: 9, day: 1))
+        )
+    }
+
+    func testGoalCalendarNavigationAndDateAvailabilityStayWithinGoal() {
+        let calendar = Calendar.current
+        let start = calendar.date(from: DateComponents(year: 2026, month: 9, day: 17))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 10, day: 12))!
+        let september = calendar.date(from: DateComponents(year: 2026, month: 9, day: 1))!
+        let october = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1))!
+        let beforeStart = calendar.date(from: DateComponents(year: 2026, month: 9, day: 16))!
+        let afterEnd = calendar.date(from: DateComponents(year: 2026, month: 10, day: 13))!
+
+        XCTAssertNil(GoalCalendarLogic.movedMonth(from: september, offset: -1, goalStart: start, goalEnd: end, calendar: calendar))
+        XCTAssertEqual(GoalCalendarLogic.movedMonth(from: september, offset: 1, goalStart: start, goalEnd: end, calendar: calendar), october)
+        XCTAssertNil(GoalCalendarLogic.movedMonth(from: october, offset: 1, goalStart: start, goalEnd: end, calendar: calendar))
+        XCTAssertFalse(GoalCalendarLogic.isDateAvailable(beforeStart, goalStart: start, goalEnd: end, calendar: calendar))
+        XCTAssertTrue(GoalCalendarLogic.isDateAvailable(start, goalStart: start, goalEnd: end, calendar: calendar))
+        XCTAssertTrue(GoalCalendarLogic.isDateAvailable(end, goalStart: start, goalEnd: end, calendar: calendar))
+        XCTAssertFalse(GoalCalendarLogic.isDateAvailable(afterEnd, goalStart: start, goalEnd: end, calendar: calendar))
+    }
+
+    func testMilestoneCreationPersistsMultipleOnOneDayAndRejectsInvalidInput() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let calendar = Calendar.current
+        let start = calendar.date(from: DateComponents(year: 2026, month: 9, day: 1))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 9, day: 30))!
+        let date = calendar.date(from: DateComponents(year: 2026, month: 9, day: 17))!
+        let goal = Goal(title: "测试", startDate: start, endDate: end)
+        context.insert(goal)
+        try context.save()
+
+        try GoalMilestoneService.create(title: " 初稿 ", on: date, colorKey: "plum", for: goal, in: context)
+        try GoalMilestoneService.create(title: "评审", on: date, for: goal, in: context)
+        XCTAssertEqual(Set(goal.milestones.map(\.title)), ["初稿", "评审"])
+        XCTAssertEqual(goal.milestones.first(where: { $0.title == "初稿" })?.colorKey, "plum")
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Milestone>()), 2)
+        XCTAssertThrowsError(try GoalMilestoneService.create(title: "  ", on: date, for: goal, in: context))
+        let outside = calendar.date(byAdding: .day, value: 1, to: end)!
+        XCTAssertThrowsError(try GoalMilestoneService.create(title: "过期", on: outside, for: goal, in: context))
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Milestone>()), 2)
     }
 
     func testGoalCalendarRemainingDaysUsesCalendarDaysExcludingToday() {
@@ -1215,6 +1463,7 @@ final class ClearMindTests: XCTestCase {
             status: .inProgress
         )
         goal.workstreams.append(workstream)
+        goal.milestones.append(Milestone(title: "彩色节点", date: .now, colorKey: "plum"))
         sourceContext.insert(goal)
         sourceContext.insert(ScheduleTemplate(name: "默认日"))
         sourceContext.insert(ScheduleTemplate(name: "旧休息日"))
@@ -1241,9 +1490,35 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(restoredGoal.status, .paused)
         XCTAssertEqual(restoredGoal.sortOrder, 7)
         XCTAssertEqual(restoredGoal.workstreams.first?.status, .inProgress)
+        XCTAssertEqual(restoredGoal.milestones.first?.colorKey, "plum")
         XCTAssertEqual(try destination.mainContext.fetchCount(FetchDescriptor<ScheduleTemplate>()), 2)
         let restoredNearTerm = try XCTUnwrap(destination.mainContext.fetch(FetchDescriptor<NearTermItem>()).first)
         XCTAssertEqual(restoredNearTerm.reviewDate, legacyReviewDate)
+    }
+
+    func testBackupIncludesDefaultMilestoneColorAndAcceptsLegacyMissingColor() throws {
+        let source = try makeContainer()
+        let goal = Goal(title: "测试", startDate: .now, endDate: Calendar.current.date(byAdding: .day, value: 2, to: .now)!)
+        goal.milestones.append(Milestone(title: "节点", date: .now))
+        source.mainContext.insert(goal)
+        source.mainContext.insert(ScheduleTemplate(name: "默认日"))
+        try source.mainContext.save()
+
+        let data = try BackupService.exportData(from: source.mainContext)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var goals = try XCTUnwrap(json["goals"] as? [[String: Any]])
+        var milestones = try XCTUnwrap(goals[0]["milestones"] as? [[String: Any]])
+        XCTAssertEqual(milestones[0]["colorKey"] as? String, "ochre")
+
+        milestones[0].removeValue(forKey: "colorKey")
+        goals[0]["milestones"] = milestones
+        json["goals"] = goals
+        let legacyData = try JSONSerialization.data(withJSONObject: json)
+        let destination = try makeContainer()
+        try BackupService.importData(legacyData, into: destination.mainContext)
+        let restored = try XCTUnwrap(destination.mainContext.fetch(FetchDescriptor<Milestone>()).first)
+        XCTAssertEqual(restored.title, "节点")
+        XCTAssertNil(restored.colorKey)
     }
 
     func testVersionOneBackupRestoresGoalsInPreviousVisibleOrder() throws {

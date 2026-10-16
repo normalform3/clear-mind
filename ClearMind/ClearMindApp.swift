@@ -94,6 +94,9 @@ enum UITestFixtureSeeder {
             endMinute: 15 * 60,
             scope: focusScope
         )
+        current.checklistItems = ["准备材料", "梳理重点", "撰写初稿", "校对内容"]
+            .enumerated()
+            .map { ScheduleChecklistItem(title: $0.element, sortOrder: $0.offset) }
         let next = ScheduleBlock(
             id: nextScheduleBlockID,
             startMinute: 15 * 60 + 30,
