@@ -172,32 +172,52 @@ struct HoverIconButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 30, height: 30)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(isHovered ? tint : CMTheme.textSecondary)
-        .background(
-            (isHovered ? tint.opacity(0.11) : Color.clear),
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-        )
-        .overlay {
+        ZStack(alignment: .top) {
+            Button(action: action) {
+                Image(systemName: systemName)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(isHovered ? tint : CMTheme.textSecondary)
+            .background(
+                (isHovered ? tint.opacity(0.11) : Color.clear),
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .overlay {
+                if isHovered {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(tint.opacity(0.18), lineWidth: 0.7)
+                }
+            }
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.14)) {
+                    isHovered = hovering
+                }
+            }
+            .accessibilityLabel(helpText)
+            .accessibilityIdentifier(accessibilityIdentifier)
+
             if isHovered {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(tint.opacity(0.18), lineWidth: 0.7)
+                Text(helpText)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(CMTheme.textPrimary)
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 5))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(CMTheme.separator, lineWidth: 0.7)
+                    }
+                    .offset(y: 35)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("\(accessibilityIdentifier)-hover")
             }
         }
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.14)) {
-                isHovered = hovering
-            }
-        }
-        .help(helpText)
-        .accessibilityLabel(helpText)
-        .accessibilityIdentifier(accessibilityIdentifier)
+        .frame(width: 30, height: 30)
+        .zIndex(isHovered ? 2 : 0)
     }
 }
 

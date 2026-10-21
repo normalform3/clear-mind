@@ -121,6 +121,7 @@ final class Workstream {
     var startDate: Date
     var endDate: Date
     var statusRaw: String
+    var colorKey: String?
     var createdAt: Date
     var updatedAt: Date
     var goal: Goal?
@@ -140,6 +141,7 @@ final class Workstream {
         startDate: Date,
         endDate: Date,
         status: WorkstreamStatus = .planned,
+        colorKey: String? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -149,6 +151,7 @@ final class Workstream {
         self.startDate = startDate.startOfDay
         self.endDate = endDate.startOfDay
         self.statusRaw = status.rawValue
+        self.colorKey = colorKey
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

@@ -71,17 +71,6 @@ struct ScheduleSection: View {
 
                     Spacer(minLength: 24)
 
-                    TimelineView(.everyMinute) { context in
-                        DashboardDayProgress(
-                            date: UITestFixtureSeeder.dashboardReferenceDate ?? context.date,
-                            blocks: selectedTemplate.map { sortedBlocks(in: $0) } ?? []
-                        )
-                    }
-                    .frame(maxWidth: 320)
-                    .layoutPriority(1)
-
-                    Spacer(minLength: 12)
-
                     HStack(spacing: 8) {
                         if isEditing {
                             Button("取消", action: cancelEditing)
@@ -99,7 +88,6 @@ struct ScheduleSection: View {
                         }
                     }
                 }
-                .zIndex(1)
 
                 QuietDivider()
 
@@ -281,178 +269,6 @@ struct ScheduleSection: View {
             inlineEdit = edit
             return false
         }
-    }
-}
-
-private struct DashboardDayProgress: View {
-    let date: Date
-    let blocks: [ScheduleBlock]
-
-    @State private var hoveredMinute: Int?
-
-    private let labelMinutes = [0, 480, 720, 960, 1200, 1440]
-
-    private var segments: [DashboardDaySegment] {
-        DashboardDaySegments.make(blocks: blocks)
-    }
-
-    private var progress: Double {
-        DashboardDayAxis.position(for: DashboardTimeContext.resolve(at: date, blocks: blocks).dayProgress * 1440)
-    }
-
-    private var boundaries: [Int] {
-        Array(Set(segments.flatMap { [$0.startMinute, $0.endMinute] }))
-            .filter { $0 > 0 && $0 < 1440 }
-            .sorted()
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            ZStack(alignment: .topLeading) {
-                if let hoveredMinute,
-                   let segment = DashboardDaySegments.segment(at: hoveredMinute, in: segments) {
-                    let cardWidth = min(260, width)
-                    hoverCard(for: segment, at: hoveredMinute)
-                        .frame(width: cardWidth, alignment: .leading)
-                        .offset(
-                            x: max(0, min(width - cardWidth,
-                                          width * DashboardDayAxis.position(for: Double(hoveredMinute)) - cardWidth / 2)),
-                            y: 47
-                        )
-                        .allowsHitTesting(false)
-                        .zIndex(2)
-                }
-
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Capsule().fill(CMTheme.daylightArcTrack.opacity(0.12)))
-                        .frame(height: 10)
-
-                    ForEach(segments) { segment in
-                        Rectangle()
-                            .fill(segment.colorKey.map { CMTheme.color(for: $0).opacity(0.22) }
-                                ?? CMTheme.daylightArcTrack.opacity(0.18))
-                            .frame(width: width * (segment.endFraction - segment.startFraction), height: 10)
-                            .position(x: width * (segment.startFraction + segment.endFraction) / 2, y: 5)
-                            .accessibilityLabel(segmentLabel(segment))
-                            .accessibilityIdentifier(
-                                segment.blockID.map { "dashboard-segment-\($0.uuidString)" }
-                                    ?? "dashboard-segment-gap-\(segment.startMinute)"
-                            )
-                    }
-
-                    ForEach(segments) { segment in
-                        let elapsedEnd = min(segment.endFraction, progress)
-                        if elapsedEnd > segment.startFraction {
-                            Rectangle()
-                                .fill(segment.colorKey.map { CMTheme.color(for: $0).opacity(0.46) }
-                                    ?? CMTheme.daylightArcTrack.opacity(0.32))
-                                .frame(width: width * (elapsedEnd - segment.startFraction), height: 10)
-                                .position(x: width * (segment.startFraction + elapsedEnd) / 2, y: 5)
-                                .accessibilityHidden(true)
-                        }
-                    }
-
-                    ForEach(boundaries, id: \.self) { minute in
-                        Rectangle()
-                            .fill(CMTheme.canvas.opacity(0.62))
-                            .frame(width: 1, height: 8)
-                            .position(x: width * DashboardDayAxis.position(for: Double(minute)), y: 5)
-                            .accessibilityHidden(true)
-                    }
-
-                    Circle()
-                        .fill(CMTheme.canvas)
-                        .frame(width: 7, height: 7)
-                        .overlay(Circle().stroke(CMTheme.daylightArcAccent.opacity(0.8), lineWidth: 1))
-                        .position(x: width * progress, y: 5)
-                        .accessibilityHidden(true)
-                }
-                .frame(height: 10)
-                .clipShape(Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 0.6))
-                .offset(y: 15)
-                .allowsHitTesting(false)
-
-                if hoveredMinute != nil {
-                    ForEach(labelMinutes, id: \.self) { minute in
-                        Text(String(format: "%02d", minute / 60))
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(CMTheme.daylightArcScale)
-                            .monospacedDigit()
-                            .frame(width: 18)
-                            .position(
-                                x: min(max(width * DashboardDayAxis.position(for: Double(minute)), 9), width - 9),
-                                y: 39
-                            )
-                            .accessibilityLabel(minute.clockText)
-                            .accessibilityIdentifier("dashboard-day-scale-\(minute)")
-                    }
-                }
-
-                Color.clear
-                    .frame(width: width, height: 34)
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case let .active(location):
-                            hoveredMinute = Int(DashboardDayAxis.minute(for: Double(location.x / max(width, 1))))
-                        case .ended:
-                            hoveredMinute = nil
-                        }
-                    }
-                    .accessibilityHidden(true)
-            }
-        }
-        .frame(height: 46)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("一日进度，今天已过去约 \(Int((DashboardTimeContext.resolve(at: date, blocks: blocks).dayProgress * 100).rounded()))%")
-        .accessibilityIdentifier("dashboard-day-progress")
-    }
-
-    private func hoverCard(for segment: DashboardDaySegment, at minute: Int) -> some View {
-        let tasks = blocks.first(where: { $0.id == segment.blockID })?.checklistItems
-            .sorted { $0.sortOrder < $1.sortOrder } ?? []
-        let taskSummary = tasks.prefix(3).map(\.title).joined(separator: "、")
-        let remainingSummary = tasks.count > 3 ? "，另有 \(tasks.count - 3) 项任务" : ""
-        return VStack(alignment: .leading, spacing: 3) {
-            Text("\(minute.clockText) · \(segmentLabel(segment))")
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(1)
-            Text("\(segment.startMinute.clockText) – \(segment.endMinute.clockText)")
-                .font(.system(size: 10))
-                .foregroundStyle(CMTheme.textSecondary)
-                .monospacedDigit()
-            ForEach(tasks.prefix(3)) { task in
-                Text("· \(task.title)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(CMTheme.textSecondary)
-                    .lineLimit(1)
-            }
-            if tasks.count > 3 {
-                Text("另有 \(tasks.count - 3) 项任务")
-                    .font(.system(size: 10))
-                    .foregroundStyle(CMTheme.textTertiary)
-            }
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(CMTheme.separator, lineWidth: 0.7))
-        .shadow(color: .black.opacity(0.08), radius: 5, y: 2)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            "\(minute.clockText)，\(segmentLabel(segment))，\(segment.startMinute.clockText) 至 \(segment.endMinute.clockText)"
-                + (taskSummary.isEmpty ? "" : "，\(taskSummary)\(remainingSummary)")
-        )
-        .accessibilityIdentifier("dashboard-day-hover")
-    }
-
-    private func segmentLabel(_ segment: DashboardDaySegment) -> String {
-        if let scopeName = segment.scopeName { return scopeName }
-        return segment.blockID == nil ? "空档" : "未填写归属"
     }
 }
 

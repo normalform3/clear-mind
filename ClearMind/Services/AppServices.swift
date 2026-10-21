@@ -504,6 +504,21 @@ enum GoalOrderService {
             throw error
         }
     }
+
+    static func restore(_ goal: Goal, in context: ModelContext) throws {
+        let goals = try context.fetch(FetchDescriptor<Goal>())
+        guard let target = goals.first(where: { $0.id == goal.id }), target.isArchived else {
+            throw GoalOrderError.invalidDraft
+        }
+        target.isArchived = false
+        GoalOrderLogic.placeAtFront(target, among: goals)
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
 }
 
 enum TimelineResizeEdge: Equatable {
@@ -622,14 +637,59 @@ enum WorkstreamTimelineLogic {
     }
 }
 
+enum WorkstreamColorLogic {
+    static func resolvedKey(for workstream: Workstream, among workstreams: [Workstream]) -> String {
+        let ordered = workstreams.sorted {
+            $0.createdAt == $1.createdAt
+                ? $0.id.uuidString < $1.id.uuidString
+                : $0.createdAt < $1.createdAt
+        }
+        let index = ordered.firstIndex(where: { $0.id == workstream.id }) ?? 0
+        return resolvedKey(for: workstream, fallbackIndex: index)
+    }
+
+    static func resolvedKey(for workstream: Workstream, fallbackIndex: Int) -> String {
+        if let key = workstream.colorKey, CMTheme.paletteKeys.contains(key) { return key }
+        return CMTheme.paletteKeys[fallbackIndex % CMTheme.paletteKeys.count]
+    }
+}
+
 struct GoalCalendarDay: Equatable, Identifiable {
     let date: Date
     let isInDisplayedMonth: Bool
     let isToday: Bool
-    let isCoveredByCurrentWorkstream: Bool
+    let workstreams: [GoalCalendarWorkstream]
     let milestones: [GoalCalendarMilestone]
 
     var id: Date { date }
+    var isCoveredByCurrentWorkstream: Bool { !workstreams.isEmpty }
+}
+
+struct GoalCalendarWorkstream: Equatable, Identifiable {
+    let id: UUID
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let colorIndex: Int
+    let colorKey: String
+}
+
+struct GoalCalendarBandSegment: Equatable, Identifiable {
+    let workstreamID: UUID
+    let title: String
+    let colorKey: String
+    let lane: Int
+    let startDayIndex: Int
+    let endDayIndex: Int
+    let roundedStart: Bool
+    let roundedEnd: Bool
+
+    var id: String { "\(workstreamID.uuidString)-\(lane)-\(startDayIndex)" }
+}
+
+struct GoalCalendarWeekBands: Equatable {
+    let segments: [GoalCalendarBandSegment]
+    let overflowCounts: [Int]
 }
 
 struct GoalCalendarMilestone: Equatable, Identifiable {
@@ -640,6 +700,58 @@ struct GoalCalendarMilestone: Equatable, Identifiable {
 }
 
 enum GoalCalendarLogic {
+    private struct OpenBand {
+        let workstream: GoalCalendarWorkstream
+        let startDayIndex: Int
+    }
+
+    static func weekBands(for days: [GoalCalendarDay], visibleLanes: Int = 2) -> GoalCalendarWeekBands {
+        guard !days.isEmpty, visibleLanes > 0 else {
+            return GoalCalendarWeekBands(segments: [], overflowCounts: Array(repeating: 0, count: days.count))
+        }
+
+        var lanes = Array<OpenBand?>(repeating: nil, count: visibleLanes)
+        var segments: [GoalCalendarBandSegment] = []
+        var overflowCounts: [Int] = []
+
+        func close(_ lane: Int, after dayIndex: Int) {
+            guard let open = lanes[lane] else { return }
+            let endDate = days[dayIndex].date
+            segments.append(GoalCalendarBandSegment(
+                workstreamID: open.workstream.id,
+                title: open.workstream.title,
+                colorKey: open.workstream.colorKey,
+                lane: lane,
+                startDayIndex: open.startDayIndex,
+                endDayIndex: dayIndex,
+                roundedStart: days[open.startDayIndex].date == open.workstream.startDate,
+                roundedEnd: endDate == open.workstream.endDate
+            ))
+            lanes[lane] = nil
+        }
+
+        for (dayIndex, day) in days.enumerated() {
+            let activeIDs = Set(day.workstreams.map(\.id))
+            for lane in lanes.indices where lanes[lane] != nil {
+                if let open = lanes[lane], !activeIDs.contains(open.workstream.id) {
+                    close(lane, after: dayIndex - 1)
+                }
+            }
+
+            for workstream in day.workstreams.sorted(by: { $0.colorIndex < $1.colorIndex }) {
+                guard !lanes.contains(where: { $0?.workstream.id == workstream.id }),
+                      let freeLane = lanes.firstIndex(where: { $0 == nil }) else { continue }
+                lanes[freeLane] = OpenBand(workstream: workstream, startDayIndex: dayIndex)
+            }
+            overflowCounts.append(max(0, day.workstreams.count - lanes.compactMap { $0 }.count))
+        }
+
+        for lane in lanes.indices where lanes[lane] != nil {
+            close(lane, after: days.count - 1)
+        }
+        return GoalCalendarWeekBands(segments: segments, overflowCounts: overflowCounts)
+    }
+
     static func dayKey(for date: Date, calendar: Calendar = .current) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
@@ -674,6 +786,12 @@ enum GoalCalendarLogic {
             to: firstOfMonth
         ) else { return [] }
 
+        let orderedWorkstreams = currentWorkstreams.sorted {
+            $0.createdAt == $1.createdAt
+                ? $0.id.uuidString < $1.id.uuidString
+                : $0.createdAt < $1.createdAt
+        }
+
         return (0..<42).compactMap { offset in
             guard let gridDate = calendar.date(byAdding: .day, value: offset, to: gridStart) else {
                 return nil
@@ -688,11 +806,21 @@ enum GoalCalendarLogic {
                 date: normalizedGridDate,
                 isInDisplayedMonth: isInDisplayedMonth,
                 isToday: calendar.isDate(normalizedGridDate, inSameDayAs: today ?? day),
-                isCoveredByCurrentWorkstream: isInDisplayedMonth && currentWorkstreams.contains { workstream in
-                    let start = calendar.startOfDay(for: workstream.startDate)
-                    let end = calendar.startOfDay(for: workstream.endDate)
-                    return start <= normalizedGridDate && normalizedGridDate <= end
-                },
+                workstreams: isInDisplayedMonth
+                    ? orderedWorkstreams.enumerated().compactMap { index, workstream in
+                        let start = calendar.startOfDay(for: workstream.startDate)
+                        let end = calendar.startOfDay(for: workstream.endDate)
+                        guard start <= normalizedGridDate && normalizedGridDate <= end else { return nil }
+                        return GoalCalendarWorkstream(
+                            id: workstream.id,
+                            title: workstream.title,
+                            startDate: start,
+                            endDate: end,
+                            colorIndex: index,
+                            colorKey: WorkstreamColorLogic.resolvedKey(for: workstream, fallbackIndex: index)
+                        )
+                    }
+                    : [],
                 milestones: isInDisplayedMonth
                     ? milestones
                         .filter { calendar.isDate($0.date, inSameDayAs: normalizedGridDate) }
@@ -1042,38 +1170,7 @@ enum ScheduleTemplateResolver {
     }
 }
 
-enum DashboardDayPeriod: Equatable {
-    case lateNight
-    case earlyMorning
-    case morning
-    case afternoon
-    case evening
-
-    var title: String {
-        switch self {
-        case .lateNight: "深夜"
-        case .earlyMorning: "清晨"
-        case .morning: "上午"
-        case .afternoon: "午后"
-        case .evening: "晚间"
-        }
-    }
-
-    var colorKey: String {
-        switch self {
-        case .lateNight: "slate"
-        case .earlyMorning: "sage"
-        case .morning: "denim"
-        case .afternoon: "ochre"
-        case .evening: "clay"
-        }
-    }
-}
-
 struct DashboardTimeContext {
-    let minuteOfDay: Int
-    let dayProgress: Double
-    let period: DashboardDayPeriod
     let currentBlock: ScheduleBlock?
 
     static func resolve(
@@ -1089,100 +1186,9 @@ struct DashboardTimeContext {
                 ? $0.endMinute < $1.endMinute
                 : $0.startMinute < $1.startMinute
         }
-
-        return DashboardTimeContext(
-            minuteOfDay: minuteOfDay,
-            dayProgress: Double(minuteOfDay) / 1440.0,
-            period: period(at: minuteOfDay),
-            currentBlock: sortedBlocks.first {
-                $0.startMinute <= minuteOfDay && minuteOfDay < $0.endMinute
-            }
-        )
-    }
-
-    private static func period(at minute: Int) -> DashboardDayPeriod {
-        switch minute {
-        case 300..<480: .earlyMorning
-        case 480..<720: .morning
-        case 720..<1080: .afternoon
-        case 1080..<1320: .evening
-        default: .lateNight
-        }
-    }
-}
-
-struct DashboardDaySegment: Identifiable {
-    let startMinute: Int
-    let endMinute: Int
-    let blockID: UUID?
-    let scopeName: String?
-    let colorKey: String?
-
-    var id: Int { startMinute }
-    var startFraction: Double { DashboardDayAxis.position(for: Double(startMinute)) }
-    var endFraction: Double { DashboardDayAxis.position(for: Double(endMinute)) }
-}
-
-enum DashboardDayAxis {
-    static func position(for minute: Double) -> Double {
-        let minute = min(max(minute, 0), 1440)
-        switch minute {
-        case ..<480: return minute / 480 * 0.1
-        case ..<1200: return 0.1 + (minute - 480) / 720 * 0.8
-        default: return 0.9 + (minute - 1200) / 240 * 0.1
-        }
-    }
-
-    static func minute(for fraction: Double) -> Double {
-        let fraction = min(max(fraction, 0), 1)
-        switch fraction {
-        case ..<0.1: return fraction / 0.1 * 480
-        case ..<0.9: return 480 + (fraction - 0.1) / 0.8 * 720
-        default: return 1200 + (fraction - 0.9) / 0.1 * 240
-        }
-    }
-}
-
-enum DashboardDaySegments {
-    static func segment(at minute: Int, in segments: [DashboardDaySegment]) -> DashboardDaySegment? {
-        segments.first {
-            minute >= $0.startMinute && (minute < $0.endMinute || minute == 1440 && $0.endMinute == 1440)
-        }
-    }
-
-    static func make(blocks: [ScheduleBlock]) -> [DashboardDaySegment] {
-        var segments: [DashboardDaySegment] = []
-        var cursor = 0
-        let sorted = blocks.sorted {
-            $0.startMinute == $1.startMinute
-                ? $0.endMinute < $1.endMinute
-                : $0.startMinute < $1.startMinute
-        }
-
-        for block in sorted {
-            let start = max(cursor, min(1440, block.startMinute))
-            let end = min(1440, block.endMinute)
-            guard end > start else { continue }
-            if start > cursor {
-                segments.append(DashboardDaySegment(
-                    startMinute: cursor, endMinute: start, blockID: nil,
-                    scopeName: nil, colorKey: nil
-                ))
-            }
-            segments.append(DashboardDaySegment(
-                startMinute: start, endMinute: end, blockID: block.id,
-                scopeName: block.scope?.name, colorKey: block.scope?.colorKey
-            ))
-            cursor = end
-        }
-
-        if cursor < 1440 {
-            segments.append(DashboardDaySegment(
-                startMinute: cursor, endMinute: 1440, blockID: nil,
-                scopeName: nil, colorKey: nil
-            ))
-        }
-        return segments
+        return DashboardTimeContext(currentBlock: sortedBlocks.first {
+            $0.startMinute <= minuteOfDay && minuteOfDay < $0.endMinute
+        })
     }
 }
 

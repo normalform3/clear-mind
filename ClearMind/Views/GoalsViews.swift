@@ -5,6 +5,7 @@ struct GoalsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var goals: [Goal]
     @State private var showingNewGoal = false
+    @State private var showArchived = false
     @State private var isReordering = false
     @State private var reorderDraft: [UUID] = []
     @State private var reorderErrorMessage: String?
@@ -13,7 +14,12 @@ struct GoalsView: View {
         GoalOrderLogic.ordered(goals.filter { !$0.isArchived })
     }
 
+    private var archivedGoals: [Goal] {
+        GoalOrderLogic.ordered(goals.filter(\.isArchived))
+    }
+
     private var displayedGoals: [Goal] {
+        if showArchived { return archivedGoals }
         guard isReordering else { return visibleGoals }
         let byID = Dictionary(uniqueKeysWithValues: visibleGoals.map { ($0.id, $0) })
         return reorderDraft.compactMap { byID[$0] }
@@ -32,12 +38,13 @@ struct GoalsView: View {
                             .buttonStyle(PrimaryButtonStyle())
                             .accessibilityIdentifier("goal-reorder-finish")
                     } else {
-                        if !visibleGoals.isEmpty {
+                        if !showArchived && !visibleGoals.isEmpty {
                             Button("排序", action: beginReordering)
                                 .buttonStyle(QuietButtonStyle())
                                 .accessibilityIdentifier("goal-reorder-start")
                         }
                         Button {
+                            showArchived = false
                             showingNewGoal = true
                         } label: {
                             Label("新建目标", systemImage: "plus")
@@ -46,13 +53,25 @@ struct GoalsView: View {
                     }
                 }
 
-                if visibleGoals.isEmpty {
+                Toggle("查看已归档", isOn: $showArchived)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+                    .disabled(isReordering)
+                    .accessibilityIdentifier("goal-archive-toggle")
+
+                if displayedGoals.isEmpty {
                     IslandSection {
                         EmptyState(
-                            "还没有长期目标",
-                            message: "一个明确的方向就足够开始，不需要一次规划完所有事情。",
-                            actionTitle: "建立第一个目标"
-                        ) { showingNewGoal = true }
+                            showArchived ? "还没有已归档目标" : "还没有进行中的长期目标",
+                            message: showArchived
+                                ? "归档的长期目标会显示在这里。"
+                                : archivedGoals.isEmpty
+                                    ? "一个明确的方向就足够开始，不需要一次规划完所有事情。"
+                                    : "已归档的目标仍保留在这里，可以随时查看并恢复。",
+                            actionTitle: showArchived ? nil : archivedGoals.isEmpty ? "建立第一个目标" : "查看已归档"
+                        ) {
+                            if archivedGoals.isEmpty { showingNewGoal = true } else { showArchived = true }
+                        }
                     }
                 } else {
                     LazyVGrid(
@@ -161,6 +180,7 @@ struct GoalsView: View {
 }
 
 struct GoalDetailView: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Bindable var goal: Goal
     @State private var showCompletedMilestones = false
@@ -171,6 +191,7 @@ struct GoalDetailView: View {
     @State private var editingMilestone: Milestone?
     @State private var timelineErrorMessage: String?
     @State private var goalActionErrorMessage: String?
+    @State private var showingArchiveConfirmation = false
     @State private var isEditingTimeline = false
 
     private var displayedWorkstreams: [Workstream] {
@@ -226,6 +247,12 @@ struct GoalDetailView: View {
         .sheet(isPresented: $showingNewMilestone) { MilestoneEditor(goal: goal) }
         .sheet(item: $editingWorkstream) { WorkstreamEditor(goal: goal, workstream: $0) }
         .sheet(item: $editingMilestone) { MilestoneEditor(goal: goal, milestone: $0) }
+        .alert("归档这个目标？", isPresented: $showingArchiveConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("归档目标", role: .destructive, action: archiveGoal)
+        } message: {
+            Text("归档后可在长期目标页的“查看已归档”中找到并恢复。")
+        }
         .alert("无法调整推进时间", isPresented: Binding(
             get: { timelineErrorMessage != nil },
             set: { if !$0 { timelineErrorMessage = nil } }
@@ -234,7 +261,7 @@ struct GoalDetailView: View {
         } message: {
             Text(timelineErrorMessage ?? "请稍后重试，或打开推进项编辑器修改日期。")
         }
-        .alert("无法归档目标", isPresented: Binding(
+        .alert("无法更新目标", isPresented: Binding(
             get: { goalActionErrorMessage != nil },
             set: { if !$0 { goalActionErrorMessage = nil } }
         )) {
@@ -259,14 +286,33 @@ struct GoalDetailView: View {
                     ) {
                         editingGoal = true
                     }
-                    HoverIconButton(
-                        systemName: "archivebox",
-                        helpText: "归档目标",
-                        tint: CMTheme.color(for: "clay"),
-                        accessibilityIdentifier: "goal-archive-button",
-                        action: archiveGoal
-                    )
+                    if goal.isArchived {
+                        HoverIconButton(
+                            systemName: "arrow.uturn.backward",
+                            helpText: "恢复目标",
+                            tint: CMTheme.color(for: "sage"),
+                            accessibilityIdentifier: "goal-restore-button",
+                            action: restoreGoal
+                        )
+                    } else {
+                        HoverIconButton(
+                            systemName: "archivebox",
+                            helpText: "归档目标",
+                            tint: CMTheme.color(for: "clay"),
+                            accessibilityIdentifier: "goal-archive-button"
+                        ) {
+                            showingArchiveConfirmation = true
+                        }
+                    }
                 }
+            }
+            .zIndex(1)
+
+            if goal.isArchived {
+                Text("已归档")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(CMTheme.textSecondary)
+                    .accessibilityIdentifier("goal-archived-status")
             }
 
             Text("\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate) · \(goalDuration) 天")
@@ -328,6 +374,16 @@ struct GoalDetailView: View {
     private func archiveGoal() {
         do {
             try GoalOrderService.archive(goal, in: modelContext)
+            dismiss()
+        } catch {
+            goalActionErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func restoreGoal() {
+        do {
+            try GoalOrderService.restore(goal, in: modelContext)
+            dismiss()
         } catch {
             goalActionErrorMessage = error.localizedDescription
         }
@@ -359,6 +415,7 @@ struct GoalDetailView: View {
 }
 
 private struct GoalDetailMonthCalendar: View {
+    @Environment(\.colorScheme) private var colorScheme
     let goal: Goal
     let milestones: [Milestone]
     let onCreateMilestone: (Date, String, String) -> String?
@@ -369,6 +426,7 @@ private struct GoalDetailMonthCalendar: View {
     @State private var quickTitle = ""
     @State private var quickColorKey = "ochre"
     @State private var quickError: String?
+    @State private var hoveredDayKey: String?
     @FocusState private var isQuickTitleFocused: Bool
 
     private let weekdaySymbols = ["一", "二", "三", "四", "五", "六", "日"]
@@ -406,7 +464,8 @@ private struct GoalDetailMonthCalendar: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let monthDays = days
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Text("月历")
                     .font(.system(size: 17, weight: .semibold))
@@ -421,18 +480,17 @@ private struct GoalDetailMonthCalendar: View {
             }
             QuietDivider()
 
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7),
-                spacing: 6
-            ) {
-                ForEach(weekdaySymbols, id: \.self) { symbol in
-                    Text(symbol)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(CMTheme.textTertiary)
-                        .frame(maxWidth: .infinity)
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    ForEach(weekdaySymbols, id: \.self) { symbol in
+                        Text(symbol)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(CMTheme.textTertiary)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
-                ForEach(days) { day in
-                    dayCell(day)
+                ForEach(0..<6, id: \.self) { weekIndex in
+                    weekRow(Array(monthDays[(weekIndex * 7)..<((weekIndex + 1) * 7)]))
                 }
             }
         }
@@ -465,7 +523,45 @@ private struct GoalDetailMonthCalendar: View {
         .accessibilityIdentifier(offset < 0 ? "goal-month-previous" : "goal-month-next")
     }
 
-    private func dayCell(_ day: GoalCalendarDay) -> some View {
+    private func weekRow(_ weekDays: [GoalCalendarDay]) -> some View {
+        let bands = GoalCalendarLogic.weekBands(for: weekDays)
+        return HStack(spacing: 6) {
+            ForEach(Array(weekDays.enumerated()), id: \.element.id) { index, day in
+                dayCell(day, overflowCount: bands.overflowCounts[index])
+            }
+        }
+        .frame(height: 94)
+        .overlay(alignment: .topLeading) {
+            GeometryReader { geometry in
+                let cellWidth = (geometry.size.width - 36) / 7
+                let step = cellWidth + 6
+                ForEach(bands.segments) { band in
+                    let leadingInset: CGFloat = band.roundedStart ? 7 : 0
+                    let trailingInset: CGFloat = band.roundedEnd ? 7 : 0
+                    let x = CGFloat(band.startDayIndex) * step + leadingInset
+                    let right = CGFloat(band.endDayIndex) * step + cellWidth - trailingInset
+                    let startRadius: CGFloat = band.roundedStart ? 4 : 0
+                    let endRadius: CGFloat = band.roundedEnd ? 4 : 0
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: startRadius,
+                        bottomLeadingRadius: startRadius,
+                        bottomTrailingRadius: endRadius,
+                        topTrailingRadius: endRadius
+                    )
+                    .fill(CMTheme.color(for: band.colorKey).opacity(colorScheme == .dark ? 0.62 : 0.42))
+                    .frame(width: max(1, right - x), height: 7)
+                    .offset(x: x, y: 66 + CGFloat(band.lane) * 10)
+                    .accessibilityElement()
+                    .accessibilityLabel(band.title)
+                    .accessibilityIdentifier("goal-month-workstream-band-\(band.workstreamID.uuidString)-\(GoalCalendarLogic.dayKey(for: weekDays[0].date))")
+                }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func dayCell(_ day: GoalCalendarDay, overflowCount: Int) -> some View {
+        let dayKey = GoalCalendarLogic.dayKey(for: day.date)
         let available = day.isInDisplayedMonth && GoalCalendarLogic.isDateAvailable(
             day.date, goalStart: goal.startDate, goalEnd: goal.endDate
         )
@@ -477,14 +573,14 @@ private struct GoalDetailMonthCalendar: View {
                 quickError = nil
             } label: {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(day.isCoveredByCurrentWorkstream ? CMTheme.color(for: "denim").opacity(0.09) : CMTheme.quietFill.opacity(0.35))
+                    .fill(CMTheme.quietFill.opacity(0.35))
                     .overlay {
                         if day.isToday {
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 .stroke(CMTheme.color(for: "clay"), lineWidth: 1)
                         }
                     }
-                    .frame(height: 76)
+                    .frame(height: 94)
                     .contentShape(Rectangle())
                     .overlay(alignment: .topLeading) {
                         Text("\(Calendar.current.component(.day, from: day.date))")
@@ -495,8 +591,12 @@ private struct GoalDetailMonthCalendar: View {
             }
             .buttonStyle(.plain)
             .disabled(!available)
-            .accessibilityLabel("\(day.date.compactChineseDate)，添加里程碑")
-            .accessibilityIdentifier("goal-month-day-\(GoalCalendarLogic.dayKey(for: day.date))")
+            .accessibilityLabel(
+                "\(day.date.compactChineseDate)"
+                    + (day.workstreams.isEmpty ? "" : "，推进项：" + day.workstreams.map(\.title).joined(separator: "、"))
+                    + "，添加里程碑"
+            )
+            .accessibilityIdentifier("goal-month-day-\(dayKey)")
             .popover(isPresented: Binding(
                 get: { quickDate == day.date },
                 set: { if !$0 { quickDate = nil } }
@@ -535,8 +635,77 @@ private struct GoalDetailMonthCalendar: View {
             }
             .padding(.horizontal, 7)
             .padding(.top, 27)
+
+            if overflowCount > 0 {
+                Text("+\(overflowCount)")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(CMTheme.textSecondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, 7)
+                    .accessibilityIdentifier("goal-month-workstream-overflow-\(dayKey)")
+                    .allowsHitTesting(false)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 76, maxHeight: 76, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 94, maxHeight: 94, alignment: .topLeading)
+        .onHover { hovering in
+            if hovering && !day.workstreams.isEmpty {
+                hoveredDayKey = dayKey
+            } else if hoveredDayKey == dayKey {
+                hoveredDayKey = nil
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if hoveredDayKey == dayKey && !day.workstreams.isEmpty {
+                workstreamHoverCard(for: day)
+                    .frame(width: 210)
+                    .offset(y: -90)
+                    .allowsHitTesting(false)
+            }
+        }
+        .zIndex(hoveredDayKey == dayKey ? 2 : 0)
+    }
+
+    private func workstreamColor(_ workstream: GoalCalendarWorkstream) -> Color {
+        CMTheme.color(for: workstream.colorKey)
+    }
+
+    private func workstreamHoverCard(for day: GoalCalendarDay) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(day.date.compactChineseDate)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(CMTheme.textPrimary)
+            ForEach(day.workstreams) { workstream in
+                HStack(alignment: .top, spacing: 7) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(workstreamColor(workstream))
+                        .frame(width: 12, height: 5)
+                        .padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(workstream.title)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(CMTheme.textPrimary)
+                        Text("\(workstream.startDate.compactChineseDate) – \(workstream.endDate.compactChineseDate)")
+                            .font(.system(size: 9))
+                            .foregroundStyle(CMTheme.textSecondary)
+                    }
+                }
+            }
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 6))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(CMTheme.separator, lineWidth: 0.7)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(day.date.compactChineseDate)，推进项："
+                + day.workstreams.map {
+                    "\($0.title)，\($0.startDate.compactChineseDate)至\($0.endDate.compactChineseDate)"
+                }.joined(separator: "；")
+        )
+        .accessibilityIdentifier("goal-month-workstreams-hover")
     }
 
     private func quickEntry(for date: Date) -> some View {
@@ -548,7 +717,7 @@ private struct GoalDetailMonthCalendar: View {
                 .focused($isQuickTitleFocused)
                 .onSubmit { saveQuickEntry(on: date) }
                 .accessibilityIdentifier("goal-milestone-quick-title")
-            MilestoneColorSelector(selection: $quickColorKey)
+            PaletteColorSelector(selection: $quickColorKey, title: "图标颜色", identifierPrefix: "milestone-color")
             if let quickError {
                 Text(quickError)
                     .font(.system(size: 11))
@@ -689,6 +858,7 @@ struct WorkstreamEditor: View {
     @State private var details: String
     @State private var startDate: Date
     @State private var endDate: Date
+    @State private var colorKey: String
     @State private var extendGoal = false
     @State private var errorMessage: String?
 
@@ -699,6 +869,9 @@ struct WorkstreamEditor: View {
         _details = State(initialValue: workstream?.details ?? "")
         _startDate = State(initialValue: workstream?.startDate ?? max(goal.startDate, .now.startOfDay))
         _endDate = State(initialValue: workstream?.endDate ?? min(goal.endDate, Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? goal.endDate))
+        _colorKey = State(initialValue: workstream.map {
+            WorkstreamColorLogic.resolvedKey(for: $0, among: goal.workstreams)
+        } ?? CMTheme.paletteKeys[goal.workstreams.count % CMTheme.paletteKeys.count])
     }
 
     private var validRange: Bool { GoalValidator.hasValidRange(startDate: startDate, endDate: endDate) }
@@ -717,6 +890,7 @@ struct WorkstreamEditor: View {
                 DatePicker("结束", selection: $endDate, displayedComponents: .date)
                 Spacer()
             }
+            PaletteColorSelector(selection: $colorKey, title: "推进项颜色", identifierPrefix: "workstream-color")
             if validRange && !withinGoal {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("这段日期超出了目标周期（\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate)）。")
@@ -760,6 +934,7 @@ struct WorkstreamEditor: View {
             target.details = details.trimmed
             target.startDate = startDate.startOfDay
             target.endDate = endDate.startOfDay
+            target.colorKey = colorKey
             target.updatedAt = .now
             if workstream == nil { goal.workstreams.append(target) }
             goal.updatedAt = .now
@@ -802,7 +977,7 @@ struct MilestoneEditor: View {
             SheetHeader(title: milestone == nil ? "添加里程碑" : "编辑里程碑", subtitle: "里程碑是一个明确的日期节点，不占据时间区间。")
             TextField("里程碑名称", text: $title).calmTextField()
             MultilineEditor(placeholder: "补充说明（可选）", text: $details).frame(height: 90)
-            MilestoneColorSelector(selection: $colorKey)
+            PaletteColorSelector(selection: $colorKey, title: "图标颜色", identifierPrefix: "milestone-color")
             HStack {
                 DatePicker("日期", selection: $date, in: goal.startDate...goal.endDate, displayedComponents: .date)
                 Toggle("已完成", isOn: $isCompleted).toggleStyle(.checkbox)
@@ -840,12 +1015,14 @@ struct MilestoneEditor: View {
     }
 }
 
-private struct MilestoneColorSelector: View {
+private struct PaletteColorSelector: View {
     @Binding var selection: String
+    let title: String
+    let identifierPrefix: String
 
     var body: some View {
         HStack(spacing: 7) {
-            Text("图标颜色")
+            Text(title)
                 .font(.system(size: 11))
                 .foregroundStyle(CMTheme.textSecondary)
             ForEach(CMTheme.paletteKeys, id: \.self) { key in
@@ -872,7 +1049,7 @@ private struct MilestoneColorSelector: View {
                 .help(colorName(for: key))
                 .accessibilityLabel(colorName(for: key))
                 .accessibilityValue(selection == key ? "已选择" : "未选择")
-                .accessibilityIdentifier("milestone-color-\(key)")
+                .accessibilityIdentifier("\(identifierPrefix)-\(key)")
             }
         }
     }

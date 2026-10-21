@@ -289,7 +289,7 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(first.checklistItems.map(\.title), ["新任务"])
     }
 
-    func testChangingScopeColorPersistsForEveryBlockAndDaySegment() throws {
+    func testChangingScopeColorPersistsForEveryBlock() throws {
         let container = try makeContainer()
         let context = container.mainContext
         let template = ScheduleTemplate(name: "默认日")
@@ -304,7 +304,7 @@ final class ClearMindTests: XCTestCase {
         let reloadedScope = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<ScheduleScope>()).first)
         XCTAssertEqual(reloadedScope.colorKey, "plum")
         XCTAssertEqual(Set(template.blocks.compactMap { $0.scope?.id }), [scope.id])
-        XCTAssertEqual(DashboardDaySegments.make(blocks: template.blocks).compactMap(\.colorKey), ["plum", "plum"])
+        XCTAssertEqual(template.blocks.compactMap { $0.scope?.colorKey }, ["plum", "plum"])
     }
 
     func testChangingScopeColorRejectsUnknownPaletteKey() throws {
@@ -341,64 +341,6 @@ final class ClearMindTests: XCTestCase {
         )
     }
 
-    func testDashboardTimeContextUsesExpectedDayPeriodBoundaries() {
-        let calendar = fixedCalendar()
-        let cases: [(hour: Int, minute: Int, expected: DashboardDayPeriod)] = [
-            (0, 0, .lateNight),
-            (4, 59, .lateNight),
-            (5, 0, .earlyMorning),
-            (7, 59, .earlyMorning),
-            (8, 0, .morning),
-            (11, 59, .morning),
-            (12, 0, .afternoon),
-            (17, 59, .afternoon),
-            (18, 0, .evening),
-            (21, 59, .evening),
-            (22, 0, .lateNight)
-        ]
-
-        for item in cases {
-            let context = DashboardTimeContext.resolve(
-                at: fixedDate(hour: item.hour, minute: item.minute, calendar: calendar),
-                blocks: [],
-                calendar: calendar
-            )
-            XCTAssertEqual(context.period, item.expected, "Unexpected period at \(item.hour):\(item.minute)")
-        }
-    }
-
-    func testDashboardTimeContextReportsProgressAcrossFullDay() {
-        let calendar = fixedCalendar()
-
-        XCTAssertEqual(
-            DashboardTimeContext.resolve(
-                at: fixedDate(hour: 0, minute: 0, calendar: calendar),
-                blocks: [],
-                calendar: calendar
-            ).dayProgress,
-            0,
-            accuracy: 0.000_001
-        )
-        XCTAssertEqual(
-            DashboardTimeContext.resolve(
-                at: fixedDate(hour: 12, minute: 0, calendar: calendar),
-                blocks: [],
-                calendar: calendar
-            ).dayProgress,
-            0.5,
-            accuracy: 0.000_001
-        )
-        XCTAssertEqual(
-            DashboardTimeContext.resolve(
-                at: fixedDate(hour: 23, minute: 59, calendar: calendar),
-                blocks: [],
-                calendar: calendar
-            ).dayProgress,
-            1439.0 / 1440.0,
-            accuracy: 0.000_001
-        )
-    }
-
     func testDashboardTimeContextFindsCurrentBlockAtBoundaries() {
         let calendar = fixedCalendar()
         let first = ScheduleBlock(startMinute: 9 * 60, endMinute: 10 * 60)
@@ -432,61 +374,6 @@ final class ClearMindTests: XCTestCase {
             calendar: calendar
         )
         XCTAssertNil(afterAll.currentBlock)
-    }
-
-    func testDashboardDaySegmentsPreserveGapsAndAdjacentBoundaries() {
-        let first = ScheduleBlock(startMinute: 14 * 60, endMinute: 15 * 60)
-        let second = ScheduleBlock(startMinute: 15 * 60, endMinute: 16 * 60)
-        let segments = DashboardDaySegments.make(blocks: [second, first])
-
-        XCTAssertEqual(segments.map(\.startMinute), [0, 840, 900, 960])
-        XCTAssertEqual(segments.map(\.endMinute), [840, 900, 960, 1440])
-        XCTAssertEqual(segments.map(\.blockID), [nil, first.id, second.id, nil])
-        XCTAssertEqual(segments[1].startFraction, 0.5, accuracy: 0.000_001)
-        XCTAssertEqual(segments[1].endFraction, 0.566_666_667, accuracy: 0.000_001)
-        XCTAssertEqual(DashboardDaySegments.make(blocks: []).map(\.endMinute), [1440])
-    }
-
-    func testDashboardDaySegmentsCompressNightHoursWithoutLosingBoundaryTimes() {
-        let early = ScheduleBlock(startMinute: 7 * 60, endMinute: 9 * 60)
-        let late = ScheduleBlock(startMinute: 19 * 60, endMinute: 21 * 60)
-        let segments = DashboardDaySegments.make(blocks: [late, early])
-
-        XCTAssertEqual(segments[1].startFraction, 0.0875, accuracy: 0.000_001)
-        XCTAssertEqual(segments[1].endFraction, 0.166_666_667, accuracy: 0.000_001)
-        XCTAssertEqual(segments[3].startFraction, 0.833_333_333, accuracy: 0.000_001)
-        XCTAssertEqual(segments[3].endFraction, 0.925, accuracy: 0.000_001)
-    }
-
-    func testDashboardDaySegmentsCoverStartAndEndOfDay() {
-        let wholeDay = ScheduleBlock(startMinute: 0, endMinute: 1440)
-        let segments = DashboardDaySegments.make(blocks: [wholeDay])
-        XCTAssertEqual(segments.count, 1)
-        XCTAssertEqual(segments[0].startFraction, 0)
-        XCTAssertEqual(segments[0].endFraction, 1)
-    }
-
-    func testDashboardDayAxisInvertsCompressedHoursAndClampsEdges() {
-        for minute in [0.0, 60, 420, 480, 720, 960, 1200, 1260, 1440] {
-            XCTAssertEqual(
-                DashboardDayAxis.minute(for: DashboardDayAxis.position(for: minute)),
-                minute,
-                accuracy: 0.000_001
-            )
-        }
-        XCTAssertEqual(DashboardDayAxis.minute(for: -1), 0)
-        XCTAssertEqual(DashboardDayAxis.minute(for: 2), 1440)
-    }
-
-    func testDashboardDayHoverFindsShortNightSegmentAndBoundaryGap() {
-        let early = ScheduleBlock(startMinute: 7 * 60, endMinute: 8 * 60)
-        let late = ScheduleBlock(startMinute: 20 * 60, endMinute: 21 * 60)
-        let segments = DashboardDaySegments.make(blocks: [early, late])
-
-        XCTAssertEqual(DashboardDaySegments.segment(at: 7 * 60, in: segments)?.blockID, early.id)
-        XCTAssertEqual(DashboardDaySegments.segment(at: 8 * 60, in: segments)?.blockID, nil)
-        XCTAssertEqual(DashboardDaySegments.segment(at: 20 * 60, in: segments)?.blockID, late.id)
-        XCTAssertEqual(DashboardDaySegments.segment(at: 1440, in: segments)?.endMinute, 1440)
     }
 
     func testDashboardRendersAtMinimumWindowWidthInLightAndDark() throws {
@@ -639,6 +526,27 @@ final class ClearMindTests: XCTestCase {
         XCTAssertTrue(first.isArchived)
     }
 
+    func testGoalOrderServiceRestoresArchivedGoalAtFront() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let start = Date(timeIntervalSince1970: 100)
+        let end = Date(timeIntervalSince1970: 500)
+        let first = Goal(title: "第一", startDate: start, endDate: end, sortOrder: 0)
+        let second = Goal(title: "第二", startDate: start, endDate: end, sortOrder: 1)
+        let archived = Goal(title: "待恢复", startDate: start, endDate: end, isArchived: true, sortOrder: 2)
+        let otherArchived = Goal(title: "仍归档", startDate: start, endDate: end, isArchived: true, sortOrder: 3)
+        [first, second, archived, otherArchived].forEach(context.insert)
+        try context.save()
+
+        try GoalOrderService.restore(archived, in: context)
+
+        let reloaded = try ModelContext(container).fetch(FetchDescriptor<Goal>())
+        XCTAssertEqual(GoalOrderLogic.ordered(reloaded).map(\.title), ["待恢复", "第一", "第二", "仍归档"])
+        XCTAssertEqual(GoalOrderLogic.ordered(reloaded).map(\.sortOrder), [0, 1, 2, 3])
+        XCTAssertFalse(archived.isArchived)
+        XCTAssertTrue(otherArchived.isArchived)
+    }
+
     func testGoalOrderMovesEarlierItemAfterDropTarget() {
         let first = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let second = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
@@ -785,10 +693,90 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(byDate[september9]).isCoveredByCurrentWorkstream, false)
         XCTAssertEqual(try XCTUnwrap(byDate[september17]).isToday, true)
         XCTAssertEqual(try XCTUnwrap(byDate[september17]).isCoveredByCurrentWorkstream, true)
+        XCTAssertEqual(try XCTUnwrap(byDate[september17]).workstreams.map(\.title), ["第一项", "第二项"])
+        XCTAssertEqual(try XCTUnwrap(byDate[september17]).workstreams.map(\.colorIndex), [0, 1])
         XCTAssertEqual(try XCTUnwrap(byDate[september21]).isCoveredByCurrentWorkstream, true)
         XCTAssertEqual(try XCTUnwrap(byDate[september30]).isCoveredByCurrentWorkstream, true)
         XCTAssertEqual(try XCTUnwrap(byDate[october1]).isInDisplayedMonth, false)
         XCTAssertEqual(try XCTUnwrap(byDate[october1]).isCoveredByCurrentWorkstream, false)
+        XCTAssertTrue(try XCTUnwrap(byDate[october1]).workstreams.isEmpty)
+
+        let octoberDays = GoalCalendarLogic.monthDays(
+            containing: october1,
+            currentWorkstreams: [first, second],
+            today: today,
+            calendar: calendar
+        )
+        let october1Cell = try XCTUnwrap(octoberDays.first { $0.date == october1 })
+        XCTAssertEqual(october1Cell.workstreams.map(\.title), ["第二项"])
+        XCTAssertEqual(october1Cell.workstreams.map(\.colorIndex), [1])
+    }
+
+    func testGoalCalendarWeekBandsContinueAcrossWeeksAndMonths() throws {
+        let calendar = Calendar.current
+        func day(_ number: Int, month: Int = 9) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: month, day: number))!
+        }
+        let first = Workstream(title: "第一项", startDate: day(10), endDate: day(20), colorKey: "plum", createdAt: day(10))
+        let second = Workstream(title: "第二项", startDate: day(15), endDate: day(2, month: 10), colorKey: "sage", createdAt: day(15))
+
+        let september = GoalCalendarLogic.monthDays(
+            containing: day(17), currentWorkstreams: [first, second], calendar: calendar
+        )
+        let weekOfFourteenth = try XCTUnwrap((0..<6).map { Array(september[($0 * 7)..<(($0 + 1) * 7)]) }
+            .first { calendar.isDate($0[0].date, inSameDayAs: day(14)) })
+        let firstWeekBands = GoalCalendarLogic.weekBands(for: weekOfFourteenth)
+        XCTAssertEqual(firstWeekBands.segments.map(\.workstreamID), [first.id, second.id])
+        XCTAssertEqual(firstWeekBands.segments.map(\.lane), [0, 1])
+        XCTAssertEqual(firstWeekBands.segments.map(\.startDayIndex), [0, 1])
+        XCTAssertEqual(firstWeekBands.segments.map(\.endDayIndex), [6, 6])
+        XCTAssertEqual(firstWeekBands.segments.map(\.colorKey), ["plum", "sage"])
+        XCTAssertEqual(firstWeekBands.overflowCounts, Array(repeating: 0, count: 7))
+
+        let septemberLastWeek = Array(september[28..<35])
+        let septemberContinuation = try XCTUnwrap(GoalCalendarLogic.weekBands(for: septemberLastWeek).segments.first)
+        XCTAssertEqual(septemberContinuation.startDayIndex, 0)
+        XCTAssertEqual(septemberContinuation.endDayIndex, 2)
+        XCTAssertFalse(septemberContinuation.roundedEnd)
+
+        let october = GoalCalendarLogic.monthDays(
+            containing: day(1, month: 10), currentWorkstreams: [first, second], calendar: calendar
+        )
+        let octoberContinuation = try XCTUnwrap(GoalCalendarLogic.weekBands(for: Array(october[0..<7])).segments.first)
+        XCTAssertEqual(octoberContinuation.startDayIndex, 3)
+        XCTAssertEqual(octoberContinuation.endDayIndex, 4)
+        XCTAssertFalse(octoberContinuation.roundedStart)
+        XCTAssertTrue(octoberContinuation.roundedEnd)
+    }
+
+    func testGoalCalendarWeekBandsKeepLanesAndCountOverflow() {
+        let calendar = Calendar.current
+        let monday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 14))!
+        func day(_ offset: Int) -> Date {
+            calendar.date(byAdding: .day, value: offset, to: monday)!
+        }
+        let first = Workstream(title: "第一项", startDate: day(0), endDate: day(2), createdAt: day(0))
+        let second = Workstream(title: "第二项", startDate: day(1), endDate: day(6), createdAt: day(1))
+        let third = Workstream(title: "第三项", startDate: day(1), endDate: day(6), createdAt: day(2))
+        let days = GoalCalendarLogic.monthDays(
+            containing: monday, currentWorkstreams: [first, second, third], calendar: calendar
+        )
+        let week = Array(days[14..<21])
+        let bands = GoalCalendarLogic.weekBands(for: week)
+        XCTAssertEqual(bands.overflowCounts, [0, 1, 1, 0, 0, 0, 0])
+        XCTAssertEqual(bands.segments.filter { $0.workstreamID == second.id }.map(\.lane), [1])
+        XCTAssertEqual(bands.segments.filter { $0.workstreamID == third.id }.map(\.startDayIndex), [3])
+        XCTAssertEqual(bands.segments.filter { $0.workstreamID == third.id }.map(\.lane), [0])
+    }
+
+    func testWorkstreamColorUsesChosenKeyAndLegacyOrder() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = Workstream(title: "旧一", startDate: start, endDate: start, createdAt: start)
+        let second = Workstream(title: "旧二", startDate: start, endDate: start, createdAt: start.addingTimeInterval(1))
+        XCTAssertEqual(WorkstreamColorLogic.resolvedKey(for: first, among: [second, first]), "sage")
+        XCTAssertEqual(WorkstreamColorLogic.resolvedKey(for: second, among: [second, first]), "clay")
+        second.colorKey = "plum"
+        XCTAssertEqual(WorkstreamColorLogic.resolvedKey(for: second, among: [second, first]), "plum")
     }
 
     func testGoalCalendarSeparatesDisplayedMonthFromTodayAndGroupsMilestones() throws {
@@ -1460,7 +1448,8 @@ final class ClearMindTests: XCTestCase {
             title: "阅读资料",
             startDate: .now,
             endDate: Calendar.current.date(byAdding: .day, value: 14, to: .now)!,
-            status: .inProgress
+            status: .inProgress,
+            colorKey: "plum"
         )
         goal.workstreams.append(workstream)
         goal.milestones.append(Milestone(title: "彩色节点", date: .now, colorKey: "plum"))
@@ -1490,6 +1479,7 @@ final class ClearMindTests: XCTestCase {
         XCTAssertEqual(restoredGoal.status, .paused)
         XCTAssertEqual(restoredGoal.sortOrder, 7)
         XCTAssertEqual(restoredGoal.workstreams.first?.status, .inProgress)
+        XCTAssertEqual(restoredGoal.workstreams.first?.colorKey, "plum")
         XCTAssertEqual(restoredGoal.milestones.first?.colorKey, "plum")
         XCTAssertEqual(try destination.mainContext.fetchCount(FetchDescriptor<ScheduleTemplate>()), 2)
         let restoredNearTerm = try XCTUnwrap(destination.mainContext.fetch(FetchDescriptor<NearTermItem>()).first)
@@ -1519,6 +1509,29 @@ final class ClearMindTests: XCTestCase {
         let restored = try XCTUnwrap(destination.mainContext.fetch(FetchDescriptor<Milestone>()).first)
         XCTAssertEqual(restored.title, "节点")
         XCTAssertNil(restored.colorKey)
+    }
+
+    func testBackupAcceptsLegacyWorkstreamWithoutColor() throws {
+        let source = try makeContainer()
+        let goal = Goal(title: "测试", startDate: .now, endDate: Calendar.current.date(byAdding: .day, value: 2, to: .now)!)
+        goal.workstreams.append(Workstream(title: "旧推进项", startDate: .now, endDate: .now))
+        source.mainContext.insert(goal)
+        source.mainContext.insert(ScheduleTemplate(name: "默认日"))
+        try source.mainContext.save()
+
+        let data = try BackupService.exportData(from: source.mainContext)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var goals = try XCTUnwrap(json["goals"] as? [[String: Any]])
+        var workstreams = try XCTUnwrap(goals[0]["workstreams"] as? [[String: Any]])
+        workstreams[0].removeValue(forKey: "colorKey")
+        goals[0]["workstreams"] = workstreams
+        json["goals"] = goals
+
+        let destination = try makeContainer()
+        try BackupService.importData(JSONSerialization.data(withJSONObject: json), into: destination.mainContext)
+        let restored = try XCTUnwrap(destination.mainContext.fetch(FetchDescriptor<Workstream>()).first)
+        XCTAssertNil(restored.colorKey)
+        XCTAssertEqual(WorkstreamColorLogic.resolvedKey(for: restored, among: [restored]), "sage")
     }
 
     func testVersionOneBackupRestoresGoalsInPreviousVisibleOrder() throws {

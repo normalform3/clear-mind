@@ -59,6 +59,7 @@ struct WorkstreamRecord: Codable {
     let startDate: Date
     let endDate: Date
     let statusRaw: String
+    let colorKey: String?
     let createdAt: Date
     let updatedAt: Date
 }
@@ -191,7 +192,7 @@ enum BackupService {
                     sortOrder: goal.sortOrder,
                     tagIDs: goal.tags.map(\.id),
                     workstreams: goal.workstreams.map {
-                        WorkstreamRecord(id: $0.id, title: $0.title, details: $0.details, startDate: $0.startDate, endDate: $0.endDate, statusRaw: $0.statusRaw, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+                        WorkstreamRecord(id: $0.id, title: $0.title, details: $0.details, startDate: $0.startDate, endDate: $0.endDate, statusRaw: $0.statusRaw, colorKey: $0.colorKey, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
                     },
                     milestones: goal.milestones.map {
                         MilestoneRecord(id: $0.id, title: $0.title, details: $0.details, date: $0.date, isCompleted: $0.isCompleted, colorKey: $0.colorKey ?? "ochre", createdAt: $0.createdAt)
@@ -257,6 +258,11 @@ enum BackupService {
             }
             guard goal.workstreams.allSatisfy({ $0.startDate <= $0.endDate && $0.startDate >= goal.startDate && $0.endDate <= goal.endDate }) else {
                 throw BackupError.invalidData("推进项超出了长期目标周期。")
+            }
+            guard goal.workstreams.allSatisfy({ item in
+                item.colorKey.map(CMTheme.paletteKeys.contains) ?? true
+            }) else {
+                throw BackupError.invalidData("推进项颜色不受支持。")
             }
         }
 
@@ -326,6 +332,7 @@ enum BackupService {
                     startDate: item.startDate,
                     endDate: item.endDate,
                     status: WorkstreamStatus(rawValue: item.statusRaw) ?? .planned,
+                    colorKey: item.colorKey,
                     createdAt: item.createdAt,
                     updatedAt: item.updatedAt
                 ))

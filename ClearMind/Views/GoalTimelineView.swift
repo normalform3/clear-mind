@@ -248,7 +248,7 @@ private struct TimelineLanes: View {
             availableHeight: height - barY,
             pointsPerDay: pointsPerDay
         )
-        let color = CMTheme.color(for: "denim")
+        let color = CMTheme.color(for: WorkstreamColorLogic.resolvedKey(for: item, among: goal.workstreams))
 
         return ZStack {
             Button {

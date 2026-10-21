@@ -14,6 +14,7 @@ struct GoalPlanOverviewView: View {
     private let labelWidth: CGFloat = 218
     private let columnSpacing: CGFloat = 12
     private let axisHeight: CGFloat = 36
+    private let footerHeight: CGFloat = 24
     private let workstreamHeight: CGFloat = 62
     private let milestoneHeight: CGFloat = 40
     private let emptyHeight: CGFloat = 56
@@ -45,6 +46,7 @@ struct GoalPlanOverviewView: View {
         axisHeight
             + (workstreams.isEmpty ? emptyHeight : CGFloat(workstreams.count) * workstreamHeight)
             + CGFloat(milestones.count) * milestoneHeight
+            + footerHeight
     }
 
     var body: some View {
@@ -251,6 +253,22 @@ struct GoalPlanOverviewView: View {
                 ForEach(milestones.sorted(by: { $0.date < $1.date })) { milestone in
                     milestoneRow(milestone, plotWidth: plotWidth)
                 }
+
+                HStack(spacing: columnSpacing) {
+                    Color.clear.frame(width: labelWidth)
+                    HStack(spacing: 12) {
+                        Text(goal.startDate.compactChineseDate)
+                            .accessibilityIdentifier("goal-plan-start-date")
+                        Spacer(minLength: 0)
+                        Text(goal.endDate.compactChineseDate)
+                            .accessibilityIdentifier("goal-plan-end-date")
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(CMTheme.textSecondary)
+                    .monospacedDigit()
+                    .frame(width: plotWidth)
+                }
+                .frame(height: footerHeight, alignment: .bottom)
             }
             .frame(width: geometry.size.width, height: chartHeight, alignment: .topLeading)
             .background(alignment: .topLeading) {
@@ -258,23 +276,38 @@ struct GoalPlanOverviewView: View {
                     for tick in ticks.dropFirst() {
                         let x = labelWidth + columnSpacing + plotWidth * dayPosition(tick)
                         path.move(to: CGPoint(x: x, y: axisHeight))
-                        path.addLine(to: CGPoint(x: x, y: chartHeight))
+                        path.addLine(to: CGPoint(x: x, y: chartHeight - footerHeight))
                     }
                 }
-                .stroke(CMTheme.separator.opacity(0.92), style: StrokeStyle(lineWidth: 0.85, dash: [2, 4]))
+                .stroke(CMTheme.textSecondary.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
                 .frame(width: geometry.size.width, height: chartHeight)
                 .allowsHitTesting(false)
             }
             .overlay(alignment: .topLeading) {
                 if today >= goal.startDate && today <= goal.endDate {
                     Rectangle()
-                        .fill(CMTheme.color(for: "clay").opacity(0.75))
-                        .frame(width: 1.5, height: chartHeight - axisHeight)
+                        .fill(CMTheme.color(for: "clay").opacity(0.9))
+                        .frame(width: 2, height: chartHeight - axisHeight - footerHeight)
                         .offset(x: labelWidth + columnSpacing + plotWidth * todayPosition, y: axisHeight)
                         .allowsHitTesting(false)
                         .accessibilityElement()
                         .accessibilityLabel("今天")
                         .accessibilityIdentifier("goal-plan-today")
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if today >= goal.startDate && today <= goal.endDate {
+                    Text("今天")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(CMTheme.color(for: "clay"))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 4))
+                        .offset(
+                            x: labelWidth + columnSpacing + max(0, min(plotWidth - 32, plotWidth * todayPosition + 3)),
+                            y: axisHeight + 3
+                        )
+                        .allowsHitTesting(false)
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -325,8 +358,8 @@ struct GoalPlanOverviewView: View {
                 ForEach(Array(ticks.enumerated()), id: \.element) { index, date in
                     let x = dayPosition(date) * plotWidth
                     Text(verbatim: GoalPlanOverviewLogic.monthLabel(for: date))
-                        .font(.system(size: 10))
-                        .foregroundStyle(CMTheme.textSecondary)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(CMTheme.textPrimary)
                         .monospacedDigit()
                         .frame(
                             width: GoalPlanOverviewLogic.monthLabelWidth,
@@ -342,6 +375,11 @@ struct GoalPlanOverviewView: View {
             .frame(width: plotWidth, height: axisHeight, alignment: .topLeading)
         }
         .frame(height: axisHeight)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(CMTheme.textSecondary.opacity(0.5))
+                .frame(height: 1)
+        }
     }
 
     private func workstreamRow(_ item: Workstream, plotWidth: CGFloat) -> some View {
@@ -357,6 +395,7 @@ struct GoalPlanOverviewView: View {
         let hitX = max(0, min(plotWidth - hitWidth, barX - (hitWidth - barWidth) / 2))
         let isCurrent = focus.current.contains { $0.id == item.id }
         let days = TimelineMath.inclusiveDayCount(from: item.startDate, to: item.endDate)
+        let color = CMTheme.color(for: WorkstreamColorLogic.resolvedKey(for: item, among: goal.workstreams))
 
         return HStack(spacing: columnSpacing) {
             Button { onSelectWorkstream(item) } label: {
@@ -382,7 +421,7 @@ struct GoalPlanOverviewView: View {
                     .fill(CMTheme.separator.opacity(0.65))
                     .frame(width: plotWidth, height: 4)
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(CMTheme.color(for: "denim").opacity(isCurrent ? 0.9 : 0.6))
+                    .fill(color.opacity(isCurrent ? 0.9 : 0.6))
                     .frame(width: barWidth, height: 14)
                     .offset(x: barX)
                 Button { onSelectWorkstream(item) } label: {
@@ -405,7 +444,7 @@ struct GoalPlanOverviewView: View {
             .frame(width: plotWidth, height: workstreamHeight)
         }
         .frame(height: workstreamHeight)
-        .background(isCurrent ? CMTheme.color(for: "denim").opacity(0.055) : Color.clear)
+        .background(isCurrent ? color.opacity(0.055) : Color.clear)
         .overlay(alignment: .bottom) { QuietDivider() }
     }
 
