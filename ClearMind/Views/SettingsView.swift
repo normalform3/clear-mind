@@ -24,6 +24,7 @@ struct BackupDocument: FileDocument {
 }
 
 struct SettingsView: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.modelContext) private var modelContext
     @State private var exportDocument = BackupDocument()
     @State private var showingExporter = false
@@ -48,7 +49,7 @@ struct SettingsView: View {
                 }
                 Text("导入会替换当前内容。执行前，应用会在本地自动保留一份安全快照。")
                     .font(.system(size: 12))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .lineSpacing(3)
             }
 
@@ -57,14 +58,14 @@ struct SettingsView: View {
                     .font(.system(size: 15, weight: .semibold))
                 Text("Clear Mind 不包含账号、网络同步、分析统计或遥测。除非你主动选择备份位置，应用不会访问其他文件。")
                     .font(.system(size: 12))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .lineSpacing(4)
             }
 
             Spacer()
         }
         .padding(32)
-        .background(CMTheme.canvas)
+        .background(palette.canvas)
         .fileExporter(
             isPresented: $showingExporter,
             document: exportDocument,

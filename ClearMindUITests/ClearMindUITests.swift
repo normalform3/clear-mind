@@ -29,15 +29,15 @@ final class ClearMindUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["一天的时间分配"].exists)
         XCTAssertFalse(app.staticTexts["都已经安顿好了"].exists)
         XCTAssertTrue(
-            app.descendants(matching: .any)["global-navigation-menu"].exists,
-            "全局导航菜单应始终可用。"
+            app.buttons["sidebar-item-overview"].exists,
+            "全局导航侧栏应始终可用。"
         )
         XCTAssertFalse(app.buttons["打开"].exists, "安心总览不应显示收集箱区块的打开按钮。")
     }
 
     @MainActor
-    func testScheduleHeaderFitsMinimumWindowInDarkAppearance() throws {
-        let app = launchApp(arguments: ["--uitesting-dashboard-time-fixture", "--uitesting-dark-mode"])
+    func testScheduleHeaderFitsMinimumWindowInLightAppearance() throws {
+        let app = launchApp(arguments: ["--uitesting-dashboard-time-fixture", "-AppleInterfaceStyle", "Dark"])
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 5))
         let resizeHandle = window.coordinate(withNormalizedOffset: CGVector(dx: 0.995, dy: 0.995))
@@ -54,8 +54,8 @@ final class ClearMindUITests: XCTestCase {
         let screenshot = XCTAttachment(screenshot: captured)
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(captured.image.tiffRepresentation)))
         let background = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 4, y: bitmap.pixelsHigh / 5))
-        XCTAssertLessThan(background.usingColorSpace(.deviceRGB)?.redComponent ?? 1, 0.3)
-        screenshot.name = "dashboard-schedule-dark-narrow"
+        XCTAssertGreaterThan(background.usingColorSpace(.deviceRGB)?.redComponent ?? 0, 0.9)
+        screenshot.name = "dashboard-schedule-light-narrow"
         screenshot.lifetime = .keepAlways
         add(screenshot)
     }
@@ -280,7 +280,7 @@ final class ClearMindUITests: XCTestCase {
     }
 
     @MainActor
-    func testGlobalNavigationMenuOpensAllSectionsAndKeepsCurrentPage() throws {
+    func testSidebarOpensAllSectionsAndKeepsCurrentPage() throws {
         let app = launchApp()
 
         let destinations = [
@@ -298,12 +298,11 @@ final class ClearMindUITests: XCTestCase {
                 "导航后未显示页面：\(destination.identifier)"
             )
 
-            app.descendants(matching: .any)["global-navigation-menu"].click()
-            let currentItem = app.menuItems["global-navigation-item-\(destination.identifier)"]
-            XCTAssertTrue(currentItem.waitForExistence(timeout: 2))
+            let currentItem = app.buttons["sidebar-item-\(destination.identifier)"]
+            XCTAssertEqual(currentItem.value as? String, "已选择")
             if destination.identifier == "overview" {
                 let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-                screenshot.name = "global-navigation-menu"
+                screenshot.name = "global-navigation-sidebar"
                 screenshot.lifetime = .keepAlways
                 add(screenshot)
             }
@@ -313,6 +312,32 @@ final class ClearMindUITests: XCTestCase {
                 "再次选择当前菜单项后不应离开页面：\(destination.identifier)"
             )
         }
+    }
+
+    @MainActor
+    func testFiveThemesSwitchImmediatelyAndPersistAfterRelaunch() throws {
+        let app = launchApp()
+        let appearance = app.buttons["appearance-menu"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5))
+        appearance.click()
+
+        for theme in ["mistyBlue", "sageGreen", "mutedLavender", "slateIndigo", "warmTerracotta"] {
+            let option = app.buttons["theme-option-\(theme)"]
+            XCTAssertTrue(option.waitForExistence(timeout: 2))
+            option.click()
+            XCTAssertEqual(option.value as? String, "已选择")
+        }
+
+        app.typeKey("2", modifierFlags: [.command, .option])
+        XCTAssertEqual(app.buttons["theme-option-mistyBlue"].value as? String, "已选择")
+        app.terminate()
+
+        let relaunched = XCUIApplication()
+        relaunched.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "--uitesting"]
+        relaunched.launch()
+        let restored = relaunched.buttons["appearance-menu"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 5))
+        XCTAssertEqual(restored.value as? String, "雾蓝灰")
     }
 
     @MainActor
@@ -334,7 +359,7 @@ final class ClearMindUITests: XCTestCase {
     }
 
     @MainActor
-    func testGlobalSearchQuickCaptureAndNavigationMenuRemainAvailable() throws {
+    func testGlobalSearchQuickCaptureAndSidebarRemainAvailable() throws {
         let app = launchApp()
 
         let searchButton = app.buttons["global-search-toggle"]
@@ -357,10 +382,8 @@ final class ClearMindUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["先放下这件事"].waitForExistence(timeout: 2))
         app.buttons["取消"].click()
 
-        XCTAssertTrue(app.descendants(matching: .any)["global-navigation-menu"].exists)
-        XCTAssertFalse(app.buttons["隐藏边栏"].exists)
-        XCTAssertFalse(app.buttons["显示边栏"].exists)
-        XCTAssertFalse(app.buttons["sidebar-item-overview"].exists)
+        XCTAssertTrue(app.buttons["sidebar-item-overview"].exists)
+        XCTAssertTrue(app.buttons["appearance-menu"].exists)
     }
 
     @MainActor
@@ -709,19 +732,15 @@ final class ClearMindUITests: XCTestCase {
 
     @MainActor
     private func navigate(to identifier: String, in app: XCUIApplication) {
-        let menu = app.descendants(matching: .any)["global-navigation-menu"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 5))
-        menu.click()
-
-        let item = app.menuItems["global-navigation-item-\(identifier)"]
-        XCTAssertTrue(item.waitForExistence(timeout: 2), "缺少导航菜单项：\(identifier)")
+        let item = app.buttons["sidebar-item-\(identifier)"]
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "缺少侧栏导航项：\(identifier)")
         item.click()
     }
 
     @MainActor
     private func launchApp(arguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "--uitesting"] + arguments
+        app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "--uitesting", "--uitesting-reset-theme"] + arguments
         app.launch()
         return app
     }

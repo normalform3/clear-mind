@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct DashboardView: View {
+    @Environment(\.cmPalette) private var palette
     @Query private var goals: [Goal]
     @Query(sort: \NearTermItem.updatedAt, order: .reverse) private var nearTermItems: [NearTermItem]
     @State private var inlineHitRegions: [ScheduleInlineHitRegion] = []
@@ -29,8 +30,8 @@ struct DashboardView: View {
 
                 ScheduleSection(outsideTap: outsideTap)
 
-                DashboardIslandSection { dashboardGoals }
-                DashboardIslandSection { nearTermSection }
+                dashboardGoals
+                nearTermSection
             }
             .coordinateSpace(name: "dashboard")
             .onPreferenceChange(ScheduleInlineHitRegionKey.self) { inlineHitRegions = $0 }
@@ -56,7 +57,7 @@ struct DashboardView: View {
             ) {
                 Button("查看全部") { onNavigate(.goals) }
                     .buttonStyle(QuietButtonStyle())
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
 
             if activeGoals.isEmpty {
@@ -92,11 +93,11 @@ struct DashboardView: View {
                     if !recentItems.isEmpty {
                         Text("\(recentItems.count) 条")
                             .font(.system(size: 12))
-                            .foregroundStyle(CMTheme.textSecondary)
+                            .foregroundStyle(palette.textSecondary)
                     }
                     Button("查看全部") { onNavigate(.nearTerm) }
                         .buttonStyle(QuietButtonStyle())
-                        .foregroundStyle(CMTheme.textSecondary)
+                        .foregroundStyle(palette.textSecondary)
                 }
             }
             QuietDivider()
@@ -107,7 +108,7 @@ struct DashboardView: View {
                 ForEach(recentItems.prefix(4)) { item in
                     HStack(alignment: .top, spacing: 14) {
                         Image(systemName: "tray.full")
-                            .foregroundStyle(CMTheme.textTertiary)
+                            .foregroundStyle(palette.textTertiary)
                             .padding(.top, 2)
                         VStack(alignment: .leading, spacing: 6) {
                             Text(item.title)
@@ -115,7 +116,7 @@ struct DashboardView: View {
                             if !item.details.trimmed.isEmpty {
                                 Text(item.details)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(CMTheme.textSecondary)
+                                    .foregroundStyle(palette.textSecondary)
                                     .lineLimit(2)
                             }
                             TagPills(tags: item.tags)
@@ -132,6 +133,7 @@ struct DashboardView: View {
 }
 
 private struct DashboardTimeHeader: View {
+    @Environment(\.cmPalette) private var palette
     let date: Date
 
     private var dateText: String {
@@ -150,12 +152,12 @@ private struct DashboardTimeHeader: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(dateText)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(CMTheme.textSecondary)
+                .foregroundStyle(palette.textSecondary)
                 .accessibilityIdentifier("dashboard-date")
 
             Text(clockText)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(CMTheme.textSecondary)
+                .foregroundStyle(palette.textSecondary)
                 .accessibilityIdentifier("dashboard-time")
         }
         .frame(maxWidth: .infinity, alignment: .leading)

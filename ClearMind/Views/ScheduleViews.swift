@@ -280,6 +280,7 @@ private enum ScheduleTableMetrics {
 }
 
 private struct ScheduleTableHeader: View {
+    @Environment(\.cmPalette) private var palette
     let isEditing: Bool
 
     var body: some View {
@@ -295,13 +296,14 @@ private struct ScheduleTableHeader: View {
                     .frame(width: ScheduleTableMetrics.actionWidth, alignment: .trailing)
             }
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(CMTheme.textTertiary)
+            .foregroundStyle(palette.textTertiary)
         }
         .padding(.vertical, 7)
     }
 }
 
 private struct ScheduleBlockRow: View {
+    @Environment(\.cmPalette) private var palette
     private enum FocusedField: Hashable {
         case start
         case end
@@ -334,7 +336,7 @@ private struct ScheduleBlockRow: View {
                             HStack(spacing: 4) {
                                 timeInput("开始", keyPath: \.startText, focus: .start,
                                           identifier: "schedule-inline-start-\(block.id.uuidString)")
-                                Text("–").foregroundStyle(CMTheme.textTertiary)
+                                Text("–").foregroundStyle(palette.textTertiary)
                                 timeInput("结束", keyPath: \.endText, focus: .end,
                                           identifier: "schedule-inline-end-\(block.id.uuidString)")
                             }
@@ -345,7 +347,7 @@ private struct ScheduleBlockRow: View {
                             } label: {
                                 Text("\(block.startMinute.clockText) – \(block.endMinute.clockText)")
                                     .font(.system(size: 13, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(CMTheme.textPrimary)
+                                    .foregroundStyle(palette.textPrimary)
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("schedule-inline-time-\(block.id.uuidString)")
@@ -360,7 +362,7 @@ private struct ScheduleBlockRow: View {
                                     isColorPickerPresented = true
                                 } label: {
                                     Circle()
-                                        .fill(CMTheme.color(for: scope.colorKey))
+                                        .fill(palette.color(for: scope.colorKey))
                                         .frame(width: 7, height: 7)
                                         .frame(width: 20, height: 20)
                                         .contentShape(Rectangle())
@@ -399,7 +401,7 @@ private struct ScheduleBlockRow: View {
                                 } label: {
                                     Text("-")
                                         .font(.system(size: 13))
-                                        .foregroundStyle(CMTheme.textTertiary)
+                                        .foregroundStyle(palette.textTertiary)
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("schedule-inline-empty-task-\(block.id.uuidString)")
@@ -436,8 +438,8 @@ private struct ScheduleBlockRow: View {
                                         } label: {
                                             Text(item.title)
                                                 .font(.system(size: 13))
-                                                .foregroundStyle(item.isCompleted ? CMTheme.textTertiary : CMTheme.textPrimary)
-                                                .strikethrough(item.isCompleted, color: CMTheme.textTertiary)
+                                                .foregroundStyle(item.isCompleted ? palette.textTertiary : palette.textPrimary)
+                                                .strikethrough(item.isCompleted, color: palette.textTertiary)
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                         }
                                         .buttonStyle(.plain)
@@ -456,12 +458,12 @@ private struct ScheduleBlockRow: View {
             if let message = inlineEdit?.blockID == block.id ? inlineEdit?.errorMessage : nil {
                 Text(message)
                     .font(.system(size: 11))
-                    .foregroundStyle(CMTheme.color(for: "clay"))
+                    .foregroundStyle(palette.contentTextColor(for: "clay"))
                     .accessibilityIdentifier("schedule-inline-error-\(block.id.uuidString)")
             }
         }
         .padding(.vertical, CMTheme.rowVerticalPadding)
-        .background(isCurrent ? CMTheme.currentScheduleHighlight : Color.clear)
+        .background(isCurrent ? palette.currentScheduleHighlight : Color.clear)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(
             isCurrent ? "schedule-current-block" : "schedule-block-\(block.id.uuidString)"
@@ -495,7 +497,7 @@ private struct ScheduleBlockRow: View {
             } label: {
                 Text(title)
                     .lineLimit(2)
-                    .foregroundStyle(block.scope == nil ? CMTheme.textTertiary : CMTheme.textPrimary)
+                    .foregroundStyle(block.scope == nil ? palette.textTertiary : palette.textPrimary)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("schedule-inline-scope-\(block.id.uuidString)")
@@ -514,8 +516,8 @@ private struct ScheduleBlockRow: View {
             .multilineTextAlignment(.center)
             .padding(.vertical, 7)
             .frame(width: 64)
-            .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(CMTheme.separator, lineWidth: 0.7))
+            .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(palette.separator, lineWidth: 0.7))
             .focused($focusedField, equals: focus)
             .onSubmit(commitEdit)
             .onExitCommand(perform: cancelEdit)
@@ -582,19 +584,19 @@ private struct ScheduleBlockRow: View {
                         }
                     } label: {
                         Circle()
-                            .fill(CMTheme.color(for: key))
+                            .fill(palette.color(for: key))
                             .frame(width: 19, height: 19)
                             .overlay {
                                 if scope.colorKey == key {
                                     Image(systemName: "checkmark")
                                         .font(.system(size: 9, weight: .bold))
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(palette.contentOnColor(for: key))
                                 }
                             }
                             .padding(3)
                             .overlay {
                                 Circle()
-                                    .strokeBorder(scope.colorKey == key ? CMTheme.textPrimary : .clear, lineWidth: 1)
+                                    .strokeBorder(scope.colorKey == key ? palette.textPrimary : .clear, lineWidth: 1)
                             }
                     }
                     .buttonStyle(.plain)
@@ -621,6 +623,7 @@ private struct ScheduleBlockRow: View {
 }
 
 private struct ScheduleEditingRow: View {
+    @Environment(\.cmPalette) private var palette
     private enum Field: Hashable {
         case start
         case end
@@ -648,7 +651,7 @@ private struct ScheduleEditingRow: View {
                     HStack(spacing: 6) {
                         inlineTextField("09:00", text: $draft.startText, field: .start, identifier: "schedule-start-time")
                         Text("–")
-                            .foregroundStyle(CMTheme.textTertiary)
+                            .foregroundStyle(palette.textTertiary)
                         inlineTextField("10:00", text: $draft.endText, field: .end, identifier: "schedule-end-time")
                     }
                     .frame(width: ScheduleTableMetrics.timeWidth, alignment: .leading)
@@ -668,7 +671,7 @@ private struct ScheduleEditingRow: View {
                                     } label: {
                                         HStack(spacing: 7) {
                                             Circle()
-                                                .fill(CMTheme.color(for: scope.colorKey))
+                                                .fill(palette.color(for: scope.colorKey))
                                                 .frame(width: 6, height: 6)
                                             Text(scope.name).lineLimit(1)
                                         }
@@ -700,18 +703,18 @@ private struct ScheduleEditingRow: View {
                                 } label: {
                                     Image(systemName: "xmark")
                                         .font(.system(size: 9, weight: .semibold))
-                                        .foregroundStyle(CMTheme.textTertiary)
+                                        .foregroundStyle(palette.textTertiary)
                                 }
                                 .buttonStyle(.plain)
                                 .help("删除这项任务")
                             }
                             .padding(.horizontal, 8)
                             .padding(.vertical, 6)
-                            .background(CMTheme.cardSurface)
+                            .background(palette.cardSurface)
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .stroke(CMTheme.separator, lineWidth: 0.7)
+                                    .stroke(palette.separator, lineWidth: 0.7)
                             }
                         }
                     }
@@ -719,7 +722,7 @@ private struct ScheduleEditingRow: View {
 
                     Button(role: .destructive, action: requestDelete) {
                         Image(systemName: "trash")
-                            .foregroundStyle(CMTheme.textTertiary)
+                            .foregroundStyle(palette.textTertiary)
                             .frame(width: ScheduleTableMetrics.actionWidth, height: 24, alignment: .trailing)
                     }
                     .buttonStyle(.plain)
@@ -733,7 +736,7 @@ private struct ScheduleEditingRow: View {
                     Text(errorMessage)
                 }
                 .font(.system(size: 11))
-                .foregroundStyle(CMTheme.color(for: "clay"))
+                .foregroundStyle(palette.contentTextColor(for: "clay"))
                 .padding(.leading, 2)
                 .accessibilityLabel("时间块错误：\(errorMessage)")
             }
@@ -754,11 +757,11 @@ private struct ScheduleEditingRow: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 7)
             .frame(width: 64)
-            .background(CMTheme.cardSurface)
+            .background(palette.cardSurface)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(CMTheme.separator, lineWidth: 0.7)
+                    .stroke(palette.separator, lineWidth: 0.7)
             }
             .focused($focusedField, equals: field)
             .accessibilityIdentifier(identifier)
@@ -792,15 +795,23 @@ private struct ScheduleEditingRow: View {
 
 private extension View {
     func scheduleInputStyle() -> some View {
-        textFieldStyle(.plain)
+        modifier(ScheduleInputStyle())
+    }
+}
+
+private struct ScheduleInputStyle: ViewModifier {
+    @Environment(\.cmPalette) private var palette
+
+    func body(content: Content) -> some View {
+        content.textFieldStyle(.plain)
             .font(.system(size: 13))
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
-            .background(CMTheme.cardSurface)
+            .background(palette.cardSurface)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(CMTheme.separator, lineWidth: 0.7)
+                    .stroke(palette.separator, lineWidth: 0.7)
             }
     }
 }

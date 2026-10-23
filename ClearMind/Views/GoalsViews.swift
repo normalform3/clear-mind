@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct GoalsView: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.modelContext) private var modelContext
     @Query private var goals: [Goal]
     @State private var showingNewGoal = false
@@ -161,7 +162,7 @@ struct GoalsView: View {
                 .accessibilityLabel("后移\(goal.title)")
 
                 Image(systemName: "line.3.horizontal")
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .padding(7)
                     .accessibilityHidden(true)
             }
@@ -180,6 +181,7 @@ struct GoalsView: View {
 }
 
 struct GoalDetailView: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Bindable var goal: Goal
@@ -281,7 +283,7 @@ struct GoalDetailView: View {
                     HoverIconButton(
                         systemName: "pencil",
                         helpText: "编辑目标",
-                        tint: CMTheme.color(for: "denim"),
+                        tint: palette.color(for: "denim"),
                         accessibilityIdentifier: "goal-edit-button"
                     ) {
                         editingGoal = true
@@ -290,7 +292,7 @@ struct GoalDetailView: View {
                         HoverIconButton(
                             systemName: "arrow.uturn.backward",
                             helpText: "恢复目标",
-                            tint: CMTheme.color(for: "sage"),
+                            tint: palette.color(for: "sage"),
                             accessibilityIdentifier: "goal-restore-button",
                             action: restoreGoal
                         )
@@ -298,7 +300,7 @@ struct GoalDetailView: View {
                         HoverIconButton(
                             systemName: "archivebox",
                             helpText: "归档目标",
-                            tint: CMTheme.color(for: "clay"),
+                            tint: palette.color(for: "clay"),
                             accessibilityIdentifier: "goal-archive-button"
                         ) {
                             showingArchiveConfirmation = true
@@ -311,20 +313,20 @@ struct GoalDetailView: View {
             if goal.isArchived {
                 Text("已归档")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .accessibilityIdentifier("goal-archived-status")
             }
 
             Text("\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate) · \(goalDuration) 天")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(CMTheme.textSecondary)
+                .foregroundStyle(palette.textSecondary)
                 .monospacedDigit()
                 .accessibilityIdentifier("goal-detail-period-summary")
 
             if !goal.details.trimmed.isEmpty {
                 Text(goal.details)
                     .font(.system(size: 14))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .lineSpacing(4)
                     .frame(maxWidth: 650, alignment: .leading)
             }
@@ -364,7 +366,7 @@ struct GoalDetailView: View {
                 isEditingTimeline.toggle()
             }
             .buttonStyle(QuietButtonStyle())
-            .foregroundStyle(CMTheme.textSecondary)
+            .foregroundStyle(palette.textSecondary)
             .accessibilityIdentifier("timeline-edit-toggle")
         }
         .accessibilityElement(children: .contain)
@@ -415,6 +417,7 @@ struct GoalDetailView: View {
 }
 
 private struct GoalDetailMonthCalendar: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.colorScheme) private var colorScheme
     let goal: Goal
     let milestones: [Milestone]
@@ -473,7 +476,7 @@ private struct GoalDetailMonthCalendar: View {
                 monthButton(offset: -1, symbol: "chevron.left", label: "上个月")
                 Text(monthTitle)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .frame(minWidth: 92)
                     .monospacedDigit()
                 monthButton(offset: 1, symbol: "chevron.right", label: "下个月")
@@ -485,7 +488,7 @@ private struct GoalDetailMonthCalendar: View {
                     ForEach(weekdaySymbols, id: \.self) { symbol in
                         Text(symbol)
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(CMTheme.textTertiary)
+                            .foregroundStyle(palette.textTertiary)
                             .frame(maxWidth: .infinity)
                     }
                 }
@@ -517,7 +520,7 @@ private struct GoalDetailMonthCalendar: View {
                 .frame(width: 26, height: 26)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(destination == nil ? CMTheme.textTertiary : CMTheme.textSecondary)
+        .foregroundStyle(destination == nil ? palette.textTertiary : palette.textSecondary)
         .disabled(destination == nil)
         .accessibilityLabel(label)
         .accessibilityIdentifier(offset < 0 ? "goal-month-previous" : "goal-month-next")
@@ -548,7 +551,7 @@ private struct GoalDetailMonthCalendar: View {
                         bottomTrailingRadius: endRadius,
                         topTrailingRadius: endRadius
                     )
-                    .fill(CMTheme.color(for: band.colorKey).opacity(colorScheme == .dark ? 0.62 : 0.42))
+                    .fill(palette.color(for: band.colorKey).opacity(colorScheme == .dark ? 0.62 : 0.42))
                     .frame(width: max(1, right - x), height: 7)
                     .offset(x: x, y: 66 + CGFloat(band.lane) * 10)
                     .accessibilityElement()
@@ -573,11 +576,11 @@ private struct GoalDetailMonthCalendar: View {
                 quickError = nil
             } label: {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(CMTheme.quietFill.opacity(0.35))
+                    .fill(palette.quietFill.opacity(0.35))
                     .overlay {
                         if day.isToday {
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .stroke(CMTheme.color(for: "clay"), lineWidth: 1)
+                                .stroke(palette.color(for: "clay"), lineWidth: 1)
                         }
                     }
                     .frame(height: 94)
@@ -585,7 +588,7 @@ private struct GoalDetailMonthCalendar: View {
                     .overlay(alignment: .topLeading) {
                         Text("\(Calendar.current.component(.day, from: day.date))")
                             .font(.system(size: 12, weight: day.isToday ? .semibold : .regular))
-                            .foregroundStyle(available ? CMTheme.textPrimary : CMTheme.textTertiary.opacity(0.5))
+                            .foregroundStyle(available ? palette.textPrimary : palette.textTertiary.opacity(0.5))
                             .padding(7)
                     }
             }
@@ -613,7 +616,8 @@ private struct GoalDetailMonthCalendar: View {
                             Label(marker.title, systemImage: "diamond.fill")
                                 .font(.system(size: 10))
                                 .lineLimit(1)
-                                .foregroundStyle(CMTheme.milestoneColor(for: marker.colorKey).opacity(marker.isCompleted ? 0.55 : 1))
+                                .foregroundStyle(palette.contentTextColor(for: marker.colorKey))
+                                .strikethrough(marker.isCompleted)
                         }
                         .buttonStyle(.plain)
                         .help(marker.title)
@@ -639,7 +643,7 @@ private struct GoalDetailMonthCalendar: View {
             if overflowCount > 0 {
                 Text("+\(overflowCount)")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 7)
                     .accessibilityIdentifier("goal-month-workstream-overflow-\(dayKey)")
@@ -666,14 +670,14 @@ private struct GoalDetailMonthCalendar: View {
     }
 
     private func workstreamColor(_ workstream: GoalCalendarWorkstream) -> Color {
-        CMTheme.color(for: workstream.colorKey)
+        palette.color(for: workstream.colorKey)
     }
 
     private func workstreamHoverCard(for day: GoalCalendarDay) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(day.date.compactChineseDate)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(CMTheme.textPrimary)
+                .foregroundStyle(palette.textPrimary)
             ForEach(day.workstreams) { workstream in
                 HStack(alignment: .top, spacing: 7) {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -683,20 +687,20 @@ private struct GoalDetailMonthCalendar: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(workstream.title)
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(CMTheme.textPrimary)
+                            .foregroundStyle(palette.textPrimary)
                         Text("\(workstream.startDate.compactChineseDate) – \(workstream.endDate.compactChineseDate)")
                             .font(.system(size: 9))
-                            .foregroundStyle(CMTheme.textSecondary)
+                            .foregroundStyle(palette.textSecondary)
                     }
                 }
             }
         }
         .padding(9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 6))
+        .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 6))
         .overlay {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(CMTheme.separator, lineWidth: 0.7)
+                .stroke(palette.separator, lineWidth: 0.7)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
@@ -721,7 +725,7 @@ private struct GoalDetailMonthCalendar: View {
             if let quickError {
                 Text(quickError)
                     .font(.system(size: 11))
-                    .foregroundStyle(CMTheme.color(for: "clay"))
+                    .foregroundStyle(palette.contentTextColor(for: "clay"))
             }
             HStack {
                 Spacer()
@@ -759,6 +763,7 @@ private struct GoalDetailMonthCalendar: View {
 }
 
 struct GoalEditor: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let goal: Goal?
@@ -811,21 +816,21 @@ struct GoalEditor: View {
             if !GoalValidator.hasValidRange(startDate: startDate, endDate: endDate) {
                 Text("结束日期需要晚于或等于开始日期。")
                     .font(.system(size: 12))
-                    .foregroundStyle(CMTheme.color(for: "clay"))
+                    .foregroundStyle(palette.contentTextColor(for: "clay"))
             }
             if !keepsExistingItemsInsideRange {
                 Text("新的目标周期会把已有推进项或里程碑留在范围之外。请先调整这些内容的日期。")
                     .font(.system(size: 12))
-                    .foregroundStyle(CMTheme.color(for: "clay"))
+                    .foregroundStyle(palette.contentTextColor(for: "clay"))
             }
             if let errorMessage {
-                Text(errorMessage).font(.system(size: 12)).foregroundStyle(CMTheme.color(for: "clay"))
+                Text(errorMessage).font(.system(size: 12)).foregroundStyle(palette.contentTextColor(for: "clay"))
             }
             SheetFooter(canSave: canSave, cancel: { dismiss() }, save: save)
         }
         .padding(28)
         .frame(width: 620)
-        .background(CMTheme.canvas)
+        .background(palette.canvas)
     }
 
     private func save() {
@@ -849,6 +854,7 @@ struct GoalEditor: View {
 }
 
 struct WorkstreamEditor: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let goal: Goal
@@ -895,14 +901,14 @@ struct WorkstreamEditor: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("这段日期超出了目标周期（\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate)）。")
                         .font(.system(size: 12))
-                        .foregroundStyle(CMTheme.color(for: "clay"))
+                        .foregroundStyle(palette.contentTextColor(for: "clay"))
                     Toggle("保存时扩展长期目标的周期", isOn: $extendGoal)
                         .toggleStyle(.checkbox)
                 }
             }
 
             if let errorMessage {
-                Text(errorMessage).font(.system(size: 12)).foregroundStyle(CMTheme.color(for: "clay"))
+                Text(errorMessage).font(.system(size: 12)).foregroundStyle(palette.contentTextColor(for: "clay"))
             }
 
             HStack {
@@ -920,7 +926,7 @@ struct WorkstreamEditor: View {
         }
         .padding(28)
         .frame(width: 600)
-        .background(CMTheme.canvas)
+        .background(palette.canvas)
     }
 
     private func save() {
@@ -947,6 +953,7 @@ struct WorkstreamEditor: View {
 }
 
 struct MilestoneEditor: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let goal: Goal
@@ -998,7 +1005,7 @@ struct MilestoneEditor: View {
         }
         .padding(28)
         .frame(width: 560)
-        .background(CMTheme.canvas)
+        .background(palette.canvas)
     }
 
     private func save() {
@@ -1016,6 +1023,7 @@ struct MilestoneEditor: View {
 }
 
 private struct PaletteColorSelector: View {
+    @Environment(\.cmPalette) private var palette
     @Binding var selection: String
     let title: String
     let identifierPrefix: String
@@ -1024,25 +1032,25 @@ private struct PaletteColorSelector: View {
         HStack(spacing: 7) {
             Text(title)
                 .font(.system(size: 11))
-                .foregroundStyle(CMTheme.textSecondary)
+                .foregroundStyle(palette.textSecondary)
             ForEach(CMTheme.paletteKeys, id: \.self) { key in
                 Button {
                     selection = key
                 } label: {
                     Circle()
-                        .fill(CMTheme.color(for: key))
+                        .fill(palette.color(for: key))
                         .frame(width: 19, height: 19)
                         .overlay {
                             if selection == key {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(palette.contentOnColor(for: key))
                             }
                         }
                         .padding(3)
                         .overlay {
                             Circle()
-                                .strokeBorder(selection == key ? CMTheme.textPrimary : .clear, lineWidth: 1)
+                                .strokeBorder(selection == key ? palette.textPrimary : .clear, lineWidth: 1)
                         }
                 }
                 .buttonStyle(.plain)

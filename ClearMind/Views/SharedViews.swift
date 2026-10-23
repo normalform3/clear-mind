@@ -1,22 +1,26 @@
 import SwiftUI
 
 struct PageContainer<Content: View>: View {
+    @Environment(\.cmPalette) private var palette
     @ViewBuilder var content: Content
 
     var body: some View {
-        ScrollView {
-            content
-                .frame(maxWidth: CMTheme.pageMaxWidth, alignment: .leading)
-                .padding(.horizontal, CMTheme.pagePadding)
-                .padding(.top, 42)
-                .padding(.bottom, 64)
-                .frame(maxWidth: .infinity, alignment: .top)
+        GeometryReader { geometry in
+            ScrollView {
+                content
+                    .frame(maxWidth: CMTheme.pageMaxWidth, alignment: .leading)
+                    .padding(.horizontal, geometry.size.width < 800 ? 24 : CMTheme.pagePadding)
+                    .padding(.top, 40)
+                    .padding(.bottom, 64)
+                    .frame(maxWidth: .infinity, alignment: .top)
+            }
         }
-        .background(CMTheme.canvas)
+        .background(palette.canvas)
     }
 }
 
 struct PageHeader: View {
+    @Environment(\.cmPalette) private var palette
     let eyebrow: String?
     let title: String
 
@@ -31,18 +35,19 @@ struct PageHeader: View {
                 Text(eyebrow.uppercased())
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(1.4)
-                    .foregroundStyle(CMTheme.textTertiary)
+                    .foregroundStyle(palette.textTertiary)
             }
 
             Text(title)
-                .font(.system(size: 30, weight: .semibold, design: .default))
-                .foregroundStyle(CMTheme.textPrimary)
+                .font(.system(size: 30, weight: .medium, design: .serif))
+                .foregroundStyle(palette.textPrimary)
         }
         .padding(.bottom, 8)
     }
 }
 
 struct SectionHeading: View {
+    @Environment(\.cmPalette) private var palette
     let title: String
     let trailingText: String?
     let actionTitle: String?
@@ -63,7 +68,7 @@ struct SectionHeading: View {
             if let trailingText {
                 Text(trailingText)
                     .font(.system(size: 12))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
 
             Spacer()
@@ -71,7 +76,7 @@ struct SectionHeading: View {
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(QuietButtonStyle())
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
         }
     }
@@ -135,6 +140,7 @@ struct DashboardModuleHeading<Trailing: View>: View {
 }
 
 struct DashboardModuleTitle: View {
+    @Environment(\.cmPalette) private var palette
     let title: String
     let colorKey: String
     let accessibilityIdentifier: String
@@ -148,12 +154,12 @@ struct DashboardModuleTitle: View {
     var body: some View {
         Text(title)
             .font(.system(size: 22, weight: .semibold))
-            .foregroundStyle(CMTheme.textPrimary)
+            .foregroundStyle(palette.textPrimary)
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
             .background {
                 BrushHighlightShape()
-                    .fill(CMTheme.color(for: colorKey).opacity(0.16))
+                    .fill(palette.color(for: colorKey).opacity(0.16))
                     .padding(.horizontal, -7)
                     .padding(.vertical, -1)
                     .offset(y: 2)
@@ -163,6 +169,7 @@ struct DashboardModuleTitle: View {
 }
 
 struct HoverIconButton: View {
+    @Environment(\.cmPalette) private var palette
     @State private var isHovered = false
 
     let systemName: String
@@ -180,7 +187,7 @@ struct HoverIconButton: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(isHovered ? tint : CMTheme.textSecondary)
+            .foregroundStyle(isHovered ? tint : palette.textSecondary)
             .background(
                 (isHovered ? tint.opacity(0.11) : Color.clear),
                 in: RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -202,14 +209,14 @@ struct HoverIconButton: View {
             if isHovered {
                 Text(helpText)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(CMTheme.textPrimary)
+                    .foregroundStyle(palette.textPrimary)
                     .fixedSize()
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 5))
+                    .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 5))
                     .overlay {
                         RoundedRectangle(cornerRadius: 5)
-                            .stroke(CMTheme.separator, lineWidth: 0.7)
+                            .stroke(palette.separator, lineWidth: 0.7)
                     }
                     .offset(y: 35)
                     .allowsHitTesting(false)
@@ -222,47 +229,50 @@ struct HoverIconButton: View {
 }
 
 struct IslandSection<Content: View>: View {
+    @Environment(\.cmPalette) private var palette
     @ViewBuilder let content: Content
 
     var body: some View {
         content
-            .padding(26)
+            .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(CMTheme.islandSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(palette.cardSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(CMTheme.separator, lineWidth: 0.7)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(palette.separator, lineWidth: 1)
             }
     }
 }
 
 struct DashboardIslandSection<Content: View>: View {
+    @Environment(\.cmPalette) private var palette
     @ViewBuilder let content: Content
 
     var body: some View {
         content
-            .padding(26)
+            .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(CMTheme.quietFill)
+            .background(palette.cardSurface)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(CMTheme.separator, lineWidth: 1)
+                    .stroke(palette.separator, lineWidth: 1)
             }
-            .shadow(color: Color.black.opacity(0.055), radius: 8, y: 3)
     }
 }
 
 struct QuietDivider: View {
+    @Environment(\.cmPalette) private var palette
     var body: some View {
         Rectangle()
-            .fill(CMTheme.separator)
-            .frame(height: 0.7)
+            .fill(palette.separator)
+            .frame(height: 1)
     }
 }
 
 struct EmptyState: View {
+    @Environment(\.cmPalette) private var palette
     let title: String
     let message: String
     let actionTitle: String?
@@ -281,12 +291,12 @@ struct EmptyState: View {
                 .font(.system(size: 15, weight: .medium))
             Text(message)
                 .font(.system(size: 13))
-                .foregroundStyle(CMTheme.textSecondary)
+                .foregroundStyle(palette.textSecondary)
                 .lineSpacing(3)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(QuietButtonStyle())
-                    .foregroundStyle(CMTheme.textPrimary)
+                    .foregroundStyle(palette.textPrimary)
                     .padding(.top, 3)
             }
         }
@@ -296,6 +306,7 @@ struct EmptyState: View {
 }
 
 struct TagPills: View {
+    @Environment(\.cmPalette) private var palette
     let tags: [Tag]
 
     var body: some View {
@@ -304,10 +315,10 @@ struct TagPills: View {
                 ForEach(tags.prefix(4)) { tag in
                     Text(tag.name)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(CMTheme.color(for: tag.colorKey))
+                        .foregroundStyle(palette.contentTextColor(for: tag.colorKey))
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
-                        .background(CMTheme.color(for: tag.colorKey).opacity(0.1))
+                        .background(palette.color(for: tag.colorKey).opacity(0.1))
                         .clipShape(Capsule())
                 }
             }
@@ -316,6 +327,7 @@ struct TagPills: View {
 }
 
 struct GoalProgressCalendar: View {
+    @Environment(\.cmPalette) private var palette
     let currentWorkstreams: [Workstream]
     let milestones: [Milestone]
     var referenceDate: Date = .now
@@ -364,7 +376,7 @@ struct GoalProgressCalendar: View {
             HStack(alignment: .center, spacing: 12) {
                 Text(monthTitle)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
 
                 Spacer(minLength: 8)
 
@@ -378,7 +390,7 @@ struct GoalProgressCalendar: View {
                 ForEach(weekdaySymbols, id: \.self) { symbol in
                     Text(symbol)
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(CMTheme.textTertiary)
+                        .foregroundStyle(palette.textTertiary)
                         .frame(maxWidth: .infinity)
                 }
 
@@ -405,51 +417,51 @@ struct GoalProgressCalendar: View {
         HStack(spacing: 9) {
             HStack(spacing: 4) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(CMTheme.color(for: "denim").opacity(0.16))
+                    .fill(palette.color(for: "denim").opacity(0.16))
                     .frame(width: 12, height: 8)
                 Text("推进期")
             }
 
             HStack(spacing: 4) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .stroke(CMTheme.color(for: "clay"), lineWidth: 1)
+                    .stroke(palette.color(for: "clay"), lineWidth: 1)
                     .frame(width: 12, height: 8)
                 Text("今天")
             }
         }
         .font(.system(size: 8, weight: .medium))
-        .foregroundStyle(CMTheme.textTertiary)
+        .foregroundStyle(palette.textTertiary)
     }
 
     private func calendarCell(_ day: GoalCalendarDay) -> some View {
         let dayNumber = Calendar.current.component(.day, from: day.date)
         return VStack(spacing: 1) {
             Text("\(dayNumber)")
-                .font(.system(size: 10, weight: day.isToday ? .semibold : .regular))
+                .font(.system(size: 10, weight: day.isToday ? .semibold : (day.isInDisplayedMonth ? .medium : .regular)))
             HStack(spacing: 2) {
                 if day.isToday {
                     Text("今")
                         .font(.system(size: 7, weight: .semibold))
-                        .foregroundStyle(CMTheme.color(for: "clay"))
+                        .foregroundStyle(palette.contentTextColor(for: "clay"))
                 }
                 ForEach(day.milestones.prefix(3)) { milestone in
                     Image(systemName: "diamond.fill")
                         .font(.system(size: 5))
-                        .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey).opacity(milestone.isCompleted ? 0.38 : 0.9))
+                        .foregroundStyle(palette.contentTextColor(for: milestone.colorKey))
                 }
             }
             .frame(height: 8)
         }
-        .foregroundStyle(day.isInDisplayedMonth ? CMTheme.textSecondary : CMTheme.textTertiary.opacity(0.42))
+        .foregroundStyle(palette.textSecondary)
         .frame(maxWidth: .infinity, minHeight: 30)
         .background(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(day.isCoveredByCurrentWorkstream ? CMTheme.color(for: "denim").opacity(0.15) : Color.clear)
+                .fill(day.isCoveredByCurrentWorkstream ? palette.color(for: "denim").opacity(0.15) : Color.clear)
         )
         .overlay {
             if day.isToday {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .stroke(CMTheme.color(for: "clay"), lineWidth: 1.2)
+                    .stroke(palette.color(for: "clay"), lineWidth: 1.2)
             }
         }
         .contentShape(Rectangle())
@@ -476,24 +488,24 @@ struct GoalProgressCalendar: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(day.date.compactChineseDate)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(CMTheme.textPrimary)
+                .foregroundStyle(palette.textPrimary)
             ForEach(day.milestones) { milestone in
                 HStack(spacing: 6) {
                     Image(systemName: "diamond.fill")
                         .font(.system(size: 7))
-                        .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey).opacity(milestone.isCompleted ? 0.45 : 1))
+                        .foregroundStyle(palette.contentTextColor(for: milestone.colorKey))
                     Text(milestone.title)
                         .font(.system(size: 10))
-                        .foregroundStyle(CMTheme.textSecondary)
+                        .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
         .padding(9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(CMTheme.separator, lineWidth: 0.7))
-        .shadow(color: .black.opacity(0.08), radius: 5, y: 2)
+        .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(palette.separator, lineWidth: 0.7))
+        .shadow(color: palette.textPrimary.opacity(0.05), radius: 6, y: 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(day.date.compactChineseDate)，里程碑：\(day.milestones.map(\.title).joined(separator: "、"))")
         .accessibilityIdentifier("goal-summary-milestone-hover")
@@ -501,6 +513,7 @@ struct GoalProgressCalendar: View {
 }
 
 struct GoalSummaryCard: View {
+    @Environment(\.cmPalette) private var palette
     let goal: Goal
     var showsDetails = false
     var showsProgressCalendar = false
@@ -525,18 +538,18 @@ struct GoalSummaryCard: View {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(goal.title)
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(CMTheme.textPrimary)
+                        .foregroundStyle(palette.textPrimary)
                         .lineLimit(2)
                 }
 
                 Text("\(goal.startDate.compactChineseDate) – \(goal.endDate.compactChineseDate)")
                     .font(.system(size: 11))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
 
                 if showsDetails && !goal.details.trimmed.isEmpty {
                     Text(goal.details)
                         .font(.system(size: 13))
-                        .foregroundStyle(CMTheme.textSecondary)
+                        .foregroundStyle(palette.textSecondary)
                         .lineLimit(2)
                         .lineSpacing(3)
                 }
@@ -549,12 +562,12 @@ struct GoalSummaryCard: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("当前推进")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(CMTheme.textTertiary)
+                    .foregroundStyle(palette.textTertiary)
 
                 if currentWorkstreams.isEmpty {
                     Text("当前没有推进项")
                         .font(.system(size: 12))
-                        .foregroundStyle(CMTheme.textTertiary)
+                        .foregroundStyle(palette.textTertiary)
                 } else {
                     ForEach(currentWorkstreams) { workstream in
                         workstreamRow(workstream)
@@ -566,21 +579,21 @@ struct GoalSummaryCard: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("下一阶段")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(CMTheme.textTertiary)
+                        .foregroundStyle(palette.textTertiary)
 
                     HStack(alignment: .top, spacing: 8) {
                         Circle()
-                            .fill(CMTheme.color(for: "denim").opacity(0.32))
+                            .fill(palette.color(for: "denim").opacity(0.32))
                             .frame(width: 6, height: 6)
                             .padding(.top, 4)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(nextWorkstream.title)
                                 .font(.system(size: 12))
-                                .foregroundStyle(CMTheme.textSecondary)
+                                .foregroundStyle(palette.textSecondary)
                                 .lineLimit(1)
                             Text("\(nextWorkstream.startDate.compactChineseDate) – \(nextWorkstream.endDate.compactChineseDate)")
                                 .font(.system(size: 10))
-                                .foregroundStyle(CMTheme.textTertiary)
+                                .foregroundStyle(palette.textTertiary)
                                 .monospacedDigit()
                         }
                         Spacer(minLength: 8)
@@ -602,24 +615,24 @@ struct GoalSummaryCard: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "diamond.fill")
                         .font(.system(size: 7))
-                        .foregroundStyle(CMTheme.milestoneColor(for: nextMilestone.colorKey))
+                        .foregroundStyle(palette.contentTextColor(for: nextMilestone.colorKey))
                     Text(nextMilestone.title)
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     Text(nextMilestone.date.compactChineseDate)
                         .font(.system(size: 10))
-                        .foregroundStyle(CMTheme.textSecondary)
+                        .foregroundStyle(palette.textSecondary)
                 }
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 176, alignment: .topLeading)
-        .background(CMTheme.cardSurface)
+        .background(palette.cardSurface)
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(CMTheme.separator, lineWidth: 0.7)
+                .stroke(palette.separator, lineWidth: 0.7)
         }
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
@@ -630,7 +643,7 @@ struct GoalSummaryCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(CMTheme.color(for: "denim"))
+                        .fill(palette.color(for: "denim"))
                         .frame(width: 6, height: 6)
                     Text(workstream.title)
                         .font(.system(size: 12))
@@ -638,16 +651,16 @@ struct GoalSummaryCard: View {
                     Spacer(minLength: 8)
                     Text(remainingText(for: workstream))
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(CMTheme.color(for: "denim"))
+                        .foregroundStyle(palette.contentTextColor(for: "denim"))
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
-                        .background(CMTheme.color(for: "denim").opacity(0.09))
+                        .background(palette.color(for: "denim").opacity(0.09))
                         .clipShape(Capsule())
                         .fixedSize()
                 }
                 Text("\(workstream.startDate.compactChineseDate) – \(workstream.endDate.compactChineseDate)")
                     .font(.system(size: 10))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .padding(.leading, 14)
             }
             .accessibilityElement(children: .ignore)
@@ -658,7 +671,7 @@ struct GoalSummaryCard: View {
         } else {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(CMTheme.color(for: "denim"))
+                    .fill(palette.color(for: "denim"))
                     .frame(width: 6, height: 6)
                 Text(workstream.title)
                     .font(.system(size: 12))
@@ -666,7 +679,7 @@ struct GoalSummaryCard: View {
                 Spacer(minLength: 8)
                 Text("\(workstream.startDate.compactChineseDate) – \(workstream.endDate.compactChineseDate)")
                     .font(.system(size: 10))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .fixedSize()
             }
         }
@@ -679,16 +692,17 @@ struct GoalSummaryCard: View {
 }
 
 struct SheetHeader: View {
+    @Environment(\.cmPalette) private var palette
     let title: String
     let subtitle: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 22, weight: .medium, design: .serif))
             Text(subtitle)
                 .font(.system(size: 13))
-                .foregroundStyle(CMTheme.textSecondary)
+                .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -722,6 +736,8 @@ struct SheetFooter: View {
 }
 
 struct MultilineEditor: View {
+    @Environment(\.cmPalette) private var palette
+    @FocusState private var isFocused: Bool
     let placeholder: String
     @Binding var text: String
 
@@ -730,7 +746,7 @@ struct MultilineEditor: View {
             if text.isEmpty {
                 Text(placeholder)
                     .font(.system(size: 13))
-                    .foregroundStyle(CMTheme.textTertiary)
+                    .foregroundStyle(palette.textTertiary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 11)
                     .allowsHitTesting(false)
@@ -738,14 +754,15 @@ struct MultilineEditor: View {
             TextEditor(text: $text)
                 .font(.system(size: 13))
                 .scrollContentBackground(.hidden)
+                .focused($isFocused)
                 .padding(7)
                 .background(Color.clear)
         }
-        .background(CMTheme.quietFill.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(palette.cardSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(CMTheme.separator, lineWidth: 0.7)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isFocused ? palette.focus : palette.separator, lineWidth: isFocused ? 1.5 : 1)
         }
     }
 }

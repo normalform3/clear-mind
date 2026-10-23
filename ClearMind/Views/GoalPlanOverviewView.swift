@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GoalPlanOverviewView: View {
+    @Environment(\.cmPalette) private var palette
     @State private var displayedDay = Date.now.startOfDay
     @State private var isTimeProgressHovered = false
     @State private var hoveredWorkstreamID: UUID?
@@ -76,7 +77,7 @@ struct GoalPlanOverviewView: View {
                     on: today
                 ))
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .monospacedDigit()
             }
 
@@ -106,15 +107,15 @@ struct GoalPlanOverviewView: View {
 
                     ZStack(alignment: .leading) {
                         Capsule()
-                            .fill(CMTheme.color(for: "denim").opacity(0.14))
+                            .fill(palette.color(for: "denim").opacity(0.14))
                             .frame(height: 8)
                         Capsule()
-                            .fill(CMTheme.color(for: "denim"))
+                            .fill(palette.color(for: "denim"))
                             .frame(width: geometry.size.width * elapsedFraction, height: 8)
                         if isTimeProgressHovered {
                             ForEach(monthMarkers, id: \.date) { marker in
                                 Rectangle()
-                                    .fill(CMTheme.textPrimary.opacity(0.26))
+                                    .fill(palette.textPrimary.opacity(0.26))
                                     .frame(width: 1, height: 14)
                                     .offset(x: max(
                                         0,
@@ -124,7 +125,7 @@ struct GoalPlanOverviewView: View {
                         }
                         if today >= goal.startDate && today <= goal.endDate {
                             Circle()
-                                .fill(CMTheme.color(for: "clay"))
+                                .fill(palette.color(for: "clay"))
                                 .frame(width: 10, height: 10)
                                 .offset(x: max(0, min(geometry.size.width - 10, geometry.size.width * todayPosition - 5)))
                         }
@@ -146,7 +147,7 @@ struct GoalPlanOverviewView: View {
                                 .accessibilityIdentifier("goal-plan-progress-end-date")
                         }
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(CMTheme.textTertiary)
+                        .foregroundStyle(palette.textTertiary)
                         .monospacedDigit()
                         .frame(width: geometry.size.width)
                         .offset(y: 39)
@@ -184,32 +185,32 @@ struct GoalPlanOverviewView: View {
             switch focus.state {
             case .empty:
                 Text("还没有推进项。添加一个小目标，就能看到它在整个计划中的位置。")
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             case .upcoming:
                 Text("目标尚未开始")
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                 nextItemText
             case .current:
                 ForEach(focus.current) { item in
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(CMTheme.color(for: "denim"))
+                            .fill(palette.color(for: "denim"))
                             .frame(width: 6, height: 6)
                         Text(item.title)
                             .fontWeight(.medium)
                             .accessibilityIdentifier("goal-plan-current-\(item.id.uuidString)")
                         Spacer(minLength: 8)
                         Text(remainingText(for: item))
-                            .foregroundStyle(CMTheme.textSecondary)
+                            .foregroundStyle(palette.textSecondary)
                     }
                 }
             case .gap:
                 Text("今天没有安排推进项")
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                 nextItemText
             case .ended:
                 Text("计划周期已结束，可以回看各推进项的时间安排。")
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
         }
         .font(.system(size: 12))
@@ -221,10 +222,10 @@ struct GoalPlanOverviewView: View {
     private var nextItemText: some View {
         if let next = focus.next {
             Text("接下来：\(next.title) · 还有 \(daysUntilStart(of: next)) 天开始")
-                .foregroundStyle(CMTheme.textSecondary)
+                .foregroundStyle(palette.textSecondary)
         } else {
             Text("暂未安排后续推进项")
-                .foregroundStyle(CMTheme.textTertiary)
+                .foregroundStyle(palette.textTertiary)
         }
     }
 
@@ -242,7 +243,7 @@ struct GoalPlanOverviewView: View {
                 if workstreams.isEmpty {
                     Text("添加推进项后，这里会显示各项在目标周期中的位置。")
                         .font(.system(size: 12))
-                        .foregroundStyle(CMTheme.textTertiary)
+                        .foregroundStyle(palette.textTertiary)
                         .frame(maxWidth: .infinity, minHeight: emptyHeight, alignment: .leading)
                 } else {
                     ForEach(workstreams) { item in
@@ -264,7 +265,7 @@ struct GoalPlanOverviewView: View {
                             .accessibilityIdentifier("goal-plan-end-date")
                     }
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .monospacedDigit()
                     .frame(width: plotWidth)
                 }
@@ -279,14 +280,14 @@ struct GoalPlanOverviewView: View {
                         path.addLine(to: CGPoint(x: x, y: chartHeight - footerHeight))
                     }
                 }
-                .stroke(CMTheme.textSecondary.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+                .stroke(palette.textSecondary.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
                 .frame(width: geometry.size.width, height: chartHeight)
                 .allowsHitTesting(false)
             }
             .overlay(alignment: .topLeading) {
                 if today >= goal.startDate && today <= goal.endDate {
                     Rectangle()
-                        .fill(CMTheme.color(for: "clay").opacity(0.9))
+                        .fill(palette.color(for: "clay").opacity(0.9))
                         .frame(width: 2, height: chartHeight - axisHeight - footerHeight)
                         .offset(x: labelWidth + columnSpacing + plotWidth * todayPosition, y: axisHeight)
                         .allowsHitTesting(false)
@@ -299,10 +300,10 @@ struct GoalPlanOverviewView: View {
                 if today >= goal.startDate && today <= goal.endDate {
                     Text("今天")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(CMTheme.color(for: "clay"))
+                        .foregroundStyle(palette.contentTextColor(for: "clay"))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(CMTheme.cardSurface, in: RoundedRectangle(cornerRadius: 4))
+                        .background(palette.cardSurface, in: RoundedRectangle(cornerRadius: 4))
                         .offset(
                             x: labelWidth + columnSpacing + max(0, min(plotWidth - 32, plotWidth * todayPosition + 3)),
                             y: axisHeight + 3
@@ -339,11 +340,11 @@ struct GoalPlanOverviewView: View {
         }
         .frame(height: chartHeight)
         .padding(16)
-        .background(CMTheme.quietFill.opacity(0.28))
+        .background(palette.quietFill.opacity(0.28))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(CMTheme.separator, lineWidth: 0.7)
+                .stroke(palette.separator, lineWidth: 0.7)
         }
     }
 
@@ -351,7 +352,7 @@ struct GoalPlanOverviewView: View {
         HStack(spacing: columnSpacing) {
             Text("推进项 / 里程碑")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(CMTheme.textTertiary)
+                .foregroundStyle(palette.textTertiary)
                 .frame(width: labelWidth, alignment: .leading)
 
             ZStack(alignment: .topLeading) {
@@ -359,7 +360,7 @@ struct GoalPlanOverviewView: View {
                     let x = dayPosition(date) * plotWidth
                     Text(verbatim: GoalPlanOverviewLogic.monthLabel(for: date))
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(CMTheme.textPrimary)
+                        .foregroundStyle(palette.textPrimary)
                         .monospacedDigit()
                         .frame(
                             width: GoalPlanOverviewLogic.monthLabelWidth,
@@ -377,7 +378,7 @@ struct GoalPlanOverviewView: View {
         .frame(height: axisHeight)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(CMTheme.textSecondary.opacity(0.5))
+                .fill(palette.textSecondary.opacity(0.5))
                 .frame(height: 1)
         }
     }
@@ -395,19 +396,19 @@ struct GoalPlanOverviewView: View {
         let hitX = max(0, min(plotWidth - hitWidth, barX - (hitWidth - barWidth) / 2))
         let isCurrent = focus.current.contains { $0.id == item.id }
         let days = TimelineMath.inclusiveDayCount(from: item.startDate, to: item.endDate)
-        let color = CMTheme.color(for: WorkstreamColorLogic.resolvedKey(for: item, among: goal.workstreams))
+        let color = palette.color(for: WorkstreamColorLogic.resolvedKey(for: item, among: goal.workstreams))
 
         return HStack(spacing: columnSpacing) {
             Button { onSelectWorkstream(item) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(item.title)
                         .font(.system(size: 12, weight: isCurrent ? .semibold : .medium))
-                        .foregroundStyle(CMTheme.textPrimary)
+                        .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Text("\(days) 天")
                         .font(.system(size: 10))
-                        .foregroundStyle(CMTheme.textTertiary)
+                        .foregroundStyle(palette.textTertiary)
                         .monospacedDigit()
                         .lineLimit(1)
                 }
@@ -418,7 +419,7 @@ struct GoalPlanOverviewView: View {
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(CMTheme.separator.opacity(0.65))
+                    .fill(palette.separator.opacity(0.65))
                     .frame(width: plotWidth, height: 4)
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(color.opacity(isCurrent ? 0.9 : 0.6))
@@ -458,12 +459,12 @@ struct GoalPlanOverviewView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "diamond.fill")
                         .font(.system(size: 7))
-                        .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey))
+                        .foregroundStyle(palette.contentTextColor(for: milestone.colorKey))
                     Text(milestone.title)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Text(shortDate(milestone.date))
-                        .foregroundStyle(CMTheme.textSecondary)
+                        .foregroundStyle(palette.textSecondary)
                 }
                 .font(.system(size: 10))
                 .frame(width: labelWidth, alignment: .leading)
@@ -473,11 +474,11 @@ struct GoalPlanOverviewView: View {
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(CMTheme.separator.opacity(0.45))
+                    .fill(palette.separator.opacity(0.45))
                     .frame(width: plotWidth, height: 2)
                 Image(systemName: "diamond.fill")
                     .font(.system(size: 10))
-                    .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey))
+                    .foregroundStyle(palette.contentTextColor(for: milestone.colorKey))
                     .offset(x: x - 5)
                 Button { onSelectMilestone(milestone) } label: {
                     Color.clear
@@ -528,7 +529,7 @@ struct GoalPlanOverviewView: View {
 
         return Text("\(month)月")
             .font(.system(size: 9))
-            .foregroundStyle(CMTheme.textTertiary)
+            .foregroundStyle(palette.textTertiary)
             .monospacedDigit()
             .frame(width: 44)
             .offset(x: x, y: 39)
@@ -543,14 +544,14 @@ struct GoalPlanOverviewView: View {
     ) -> some View {
         Text(title)
             .font(.system(size: 10))
-            .foregroundStyle(CMTheme.textTertiary)
+            .foregroundStyle(palette.textTertiary)
             .lineLimit(1)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .background(CMTheme.quietFill.opacity(0.92), in: RoundedRectangle(cornerRadius: 5))
+            .background(palette.quietFill.opacity(0.92), in: RoundedRectangle(cornerRadius: 5))
             .overlay {
                 RoundedRectangle(cornerRadius: 5)
-                    .stroke(CMTheme.separator.opacity(0.7), lineWidth: 0.5)
+                    .stroke(palette.separator.opacity(0.7), lineWidth: 0.5)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(verbatim: title))

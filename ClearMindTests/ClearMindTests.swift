@@ -6,6 +6,76 @@ import XCTest
 
 @MainActor
 final class ClearMindTests: XCTestCase {
+    func testAppearanceStoreDefaultsRestoresAndRejectsUnknownTheme() {
+        let suite = "ClearMindThemeTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppearanceStore(defaults: defaults)
+        XCTAssertEqual(store.selection, .warmTerracotta)
+        store.select(.sageGreen)
+        XCTAssertEqual(defaults.string(forKey: AppearanceStore.storageKey), AppearanceTheme.sageGreen.rawValue)
+        XCTAssertEqual(AppearanceStore(defaults: defaults).selection, .sageGreen)
+
+        defaults.set("unknown-theme", forKey: AppearanceStore.storageKey)
+        XCTAssertEqual(AppearanceStore(defaults: defaults).selection, .warmTerracotta)
+    }
+
+    func testAllAppearancePalettesHaveAccessibleFunctionalText() {
+        XCTAssertEqual(AppearanceTheme.allCases.count, 5)
+        for theme in AppearanceTheme.allCases {
+            let palette = theme.palette
+            XCTAssertGreaterThanOrEqual(contrast(palette.textHex, palette.backgroundHex), 4.5)
+            XCTAssertGreaterThanOrEqual(contrast(palette.mutedTextHex, palette.backgroundHex), 4.5)
+            XCTAssertGreaterThanOrEqual(contrast(palette.mutedTextHex, palette.sidebarHex), 4.5)
+            XCTAssertGreaterThanOrEqual(contrast("#FFFFFF", palette.primaryFillHex), 4.5)
+            XCTAssertGreaterThanOrEqual(contrast("#FFFFFF", palette.primaryHoverHex), 4.5)
+            XCTAssertGreaterThanOrEqual(contrast("#FFFFFF", palette.primaryPressedHex), 4.5)
+        }
+        XCTAssertEqual(AppearanceTheme.warmTerracotta.palette.backgroundHex, "#FAF9F7")
+        XCTAssertEqual(AppearanceTheme.slateIndigo.palette.sidebarHex, "#ECEFF3")
+    }
+
+    func testSavedContentColorKeysRemainStableAndRemapWithTheme() {
+        XCTAssertEqual(CMTheme.paletteKeys, ["sage", "clay", "denim", "ochre", "plum", "slate"])
+        for key in CMTheme.paletteKeys {
+            let warm = AppearanceTheme.warmTerracotta.palette.contentHex(for: key)
+            let blue = AppearanceTheme.mistyBlue.palette.contentHex(for: key)
+            XCTAssertNotEqual(warm, blue)
+            for theme in AppearanceTheme.allCases {
+                XCTAssertGreaterThanOrEqual(
+                    contrast(theme.palette.contentTextHex(for: key), theme.palette.surfaceHex),
+                    4.5
+                )
+                XCTAssertGreaterThanOrEqual(
+                    contrast(theme.palette.contentTextHex(for: key), theme.palette.contentTintBackgroundHex(for: key)),
+                    4.5
+                )
+                XCTAssertGreaterThanOrEqual(
+                    contrast(theme.palette.contentOnColorHex(for: key), theme.palette.contentHex(for: key)),
+                    4.5
+                )
+            }
+        }
+        let palette = AppearanceTheme.warmTerracotta.palette
+        XCTAssertEqual(palette.milestoneHex(for: nil), palette.contentHex(for: "ochre"))
+        XCTAssertEqual(palette.milestoneHex(for: "unknown"), palette.contentHex(for: "ochre"))
+    }
+
+    private func contrast(_ foreground: String, _ background: String) -> Double {
+        func luminance(_ hex: String) -> Double {
+            let value = Int(hex.dropFirst(), radix: 16)!
+            let components = [value >> 16 & 0xFF, value >> 8 & 0xFF, value & 0xFF]
+            let linear = components.map { component -> Double in
+                let channel = Double(component) / 255
+                return channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+        }
+        let values = [luminance(foreground), luminance(background)].sorted()
+        return (values[1] + 0.05) / (values[0] + 0.05)
+    }
+
     func testScheduleRejectsInvalidAndOverlappingRanges() throws {
         let block = ScheduleBlock(startMinute: 9 * 60, endMinute: 10 * 60)
 
@@ -376,21 +446,20 @@ final class ClearMindTests: XCTestCase {
         XCTAssertNil(afterAll.currentBlock)
     }
 
-    func testDashboardRendersAtMinimumWindowWidthInLightAndDark() throws {
+    func testDashboardRendersAtMinimumWindowWidthForLightThemes() throws {
         let container = try makeContainer()
         let template = ScheduleTemplate(name: "默认日")
         template.blocks.append(ScheduleBlock(startMinute: 8 * 60, endMinute: 20 * 60))
         container.mainContext.insert(template)
         try container.mainContext.save()
 
-        for (name, scheme, appearance) in [
-            ("light", ColorScheme.light, NSAppearance.Name.aqua),
-            ("dark", ColorScheme.dark, NSAppearance.Name.darkAqua)
-        ] {
+        for theme in AppearanceTheme.allCases {
+            let appearance: NSAppearance.Name = theme == .slateIndigo ? .darkAqua : .aqua
             let hostingView = NSHostingView(rootView:
                 DashboardView(onNavigate: { _ in })
                     .modelContainer(container)
-                    .environment(\.colorScheme, scheme)
+                    .environment(\.cmPalette, theme.palette)
+                    .preferredColorScheme(.light)
                     .frame(width: 980, height: 680, alignment: .topLeading)
             )
             hostingView.frame = NSRect(x: 0, y: 0, width: 980, height: 680)
@@ -407,7 +476,7 @@ final class ClearMindTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(bitmap.pixelsHigh, 680)
             let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
             let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
-            attachment.name = "dashboard-980-\(name)"
+            attachment.name = "dashboard-980-\(theme.rawValue)"
             attachment.lifetime = .keepAlways
             add(attachment)
             window.orderOut(nil)

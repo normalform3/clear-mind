@@ -245,6 +245,7 @@ struct InboxView: View {
 }
 
 private struct InboxRow: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.modelContext) private var modelContext
     let entry: InboxEntry
     @State private var conversionErrorMessage: String?
@@ -257,7 +258,7 @@ private struct InboxRow: View {
                     .lineSpacing(3)
                 Text(entry.createdAt.compactChineseDate)
                     .font(.system(size: 10))
-                    .foregroundStyle(CMTheme.textTertiary)
+                    .foregroundStyle(palette.textTertiary)
             }
             Spacer()
             Menu("整理到…") {
@@ -315,6 +316,7 @@ private struct InboxRow: View {
 }
 
 private struct ContentListRow: View {
+    @Environment(\.cmPalette) private var palette
     let title: String
     let details: String
     let metadata: String?
@@ -325,11 +327,11 @@ private struct ContentListRow: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text(title)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(CMTheme.textPrimary)
+                    .foregroundStyle(palette.textPrimary)
                 if !details.trimmed.isEmpty {
                     Text(details)
                         .font(.system(size: 12))
-                        .foregroundStyle(CMTheme.textSecondary)
+                        .foregroundStyle(palette.textSecondary)
                         .lineLimit(2)
                         .lineSpacing(3)
                 }
@@ -339,11 +341,11 @@ private struct ContentListRow: View {
             if let metadata {
                 Text(metadata)
                     .font(.system(size: 11))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
             }
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(CMTheme.textTertiary)
+                .foregroundStyle(palette.textTertiary)
                 .padding(.top, 2)
         }
         .padding(.vertical, 18)
@@ -352,6 +354,7 @@ private struct ContentListRow: View {
 }
 
 struct NearTermEditor: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let item: NearTermItem?
@@ -373,7 +376,7 @@ struct NearTermEditor: View {
             TextField("事项名称", text: $title).calmTextField()
             MultilineEditor(placeholder: "补充背景或想法（可选）", text: $details).frame(height: 105)
             TextField("标签，用逗号分隔", text: $tagNames).calmTextField()
-            if let errorMessage { Text(errorMessage).font(.system(size: 12)).foregroundStyle(CMTheme.color(for: "clay")) }
+            if let errorMessage { Text(errorMessage).font(.system(size: 12)).foregroundStyle(palette.contentTextColor(for: "clay")) }
             HStack {
                 if let item {
                     Button(item.isArchived ? "恢复" : "归档") {
@@ -389,7 +392,7 @@ struct NearTermEditor: View {
         }
         .padding(28)
         .frame(width: 590)
-        .background(CMTheme.canvas)
+        .background(palette.canvas)
     }
 
     private func save() {
@@ -408,6 +411,7 @@ struct NearTermEditor: View {
 }
 
 struct IdeaEditor: View {
+    @Environment(\.cmPalette) private var palette
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     let idea: Idea?
@@ -429,7 +433,7 @@ struct IdeaEditor: View {
             TextField("想法标题", text: $title).calmTextField()
             MultilineEditor(placeholder: "写下这条想法…", text: $details).frame(height: 180)
             TextField("标签，用逗号分隔", text: $tagNames).calmTextField()
-            if let errorMessage { Text(errorMessage).font(.system(size: 12)).foregroundStyle(CMTheme.color(for: "clay")) }
+            if let errorMessage { Text(errorMessage).font(.system(size: 12)).foregroundStyle(palette.contentTextColor(for: "clay")) }
             HStack {
                 if let idea {
                     Button(idea.isArchived ? "恢复" : "归档") {
@@ -445,7 +449,7 @@ struct IdeaEditor: View {
         }
         .padding(28)
         .frame(width: 590)
-        .background(CMTheme.canvas)
+        .background(palette.canvas)
     }
 
     private func save() {

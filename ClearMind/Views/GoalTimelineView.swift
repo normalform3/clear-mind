@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GoalTimelineView: View {
+    @Environment(\.cmPalette) private var palette
     let goal: Goal
     let workstreams: [Workstream]
     let milestones: [Milestone]
@@ -65,7 +66,7 @@ struct GoalTimelineView: View {
                     .frame(width: axisWidth, height: timelineHeight, alignment: .topLeading)
 
                     Rectangle()
-                        .fill(CMTheme.separator)
+                        .fill(palette.separator)
                         .frame(width: 0.7, height: timelineHeight)
 
                     ScrollView(.horizontal) {
@@ -94,11 +95,11 @@ struct GoalTimelineView: View {
             }
             .frame(height: viewportHeight)
             .scrollIndicators(.visible)
-            .background(CMTheme.quietFill.opacity(0.28))
+            .background(palette.quietFill.opacity(0.28))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(CMTheme.separator, lineWidth: 0.7)
+                    .stroke(palette.separator, lineWidth: 0.7)
             }
             .onAppear { alignTodayToTop(using: proxy) }
         }
@@ -120,6 +121,7 @@ private struct WorkstreamResizePreview {
 }
 
 private struct TimelineAxis: View {
+    @Environment(\.cmPalette) private var palette
     let startDate: Date
     let endDate: Date
     let pointsPerDay: CGFloat
@@ -135,14 +137,14 @@ private struct TimelineAxis: View {
         ZStack(alignment: .topLeading) {
             Text("月份")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(CMTheme.textTertiary)
+                .foregroundStyle(palette.textTertiary)
                 .padding(.leading, 12)
                 .offset(y: 15)
 
             ForEach(ticks, id: \.self) { date in
                 Text(date.formatted(.dateTime.year().month(.abbreviated).locale(Locale(identifier: "zh_CN"))))
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(CMTheme.textSecondary)
+                    .foregroundStyle(palette.textSecondary)
                     .padding(.leading, 12)
                     .offset(y: headerHeight + CGFloat(TimelineMath.dayOffset(from: startDate, to: date)) * pointsPerDay - 6)
             }
@@ -158,6 +160,7 @@ private struct TimelineAxis: View {
 }
 
 private struct TimelineLanes: View {
+    @Environment(\.cmPalette) private var palette
     private static let coordinateSpaceName = "goal-timeline-lanes"
 
     let goal: Goal
@@ -185,7 +188,7 @@ private struct TimelineLanes: View {
             if workstreams.isEmpty {
                 Text("添加推进项后，它们会在这里按月份并排出现。")
                     .font(.system(size: 13))
-                    .foregroundStyle(CMTheme.textTertiary)
+                    .foregroundStyle(palette.textTertiary)
                     .padding(.leading, 24)
                     .offset(y: headerHeight + 30)
             }
@@ -209,20 +212,20 @@ private struct TimelineLanes: View {
     private var timelineGrid: some View {
         ZStack(alignment: .topLeading) {
             Rectangle()
-                .fill(CMTheme.separator)
+                .fill(palette.separator)
                 .frame(width: totalWidth, height: 0.7)
                 .offset(y: headerHeight)
 
             ForEach(Array(workstreams.indices), id: \.self) { index in
                 Rectangle()
-                    .fill(CMTheme.separator.opacity(0.48))
+                    .fill(palette.separator.opacity(0.48))
                     .frame(width: 0.7, height: height)
                     .offset(x: CGFloat(index + 1) * laneWidth)
             }
 
             ForEach(TimelineMath.monthTicks(from: goal.startDate, to: goal.endDate), id: \.self) { date in
                 Rectangle()
-                    .fill(CMTheme.separator.opacity(0.45))
+                    .fill(palette.separator.opacity(0.45))
                     .frame(width: totalWidth, height: 0.5)
                     .offset(y: yPosition(for: date))
             }
@@ -248,7 +251,7 @@ private struct TimelineLanes: View {
             availableHeight: height - barY,
             pointsPerDay: pointsPerDay
         )
-        let color = CMTheme.color(for: WorkstreamColorLogic.resolvedKey(for: item, among: goal.workstreams))
+        let color = palette.color(for: WorkstreamColorLogic.resolvedKey(for: item, among: goal.workstreams))
 
         return ZStack {
             Button {
@@ -259,12 +262,12 @@ private struct TimelineLanes: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(item.title)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(CMTheme.textPrimary)
+                                .foregroundStyle(palette.textPrimary)
                                 .lineLimit(2)
                             if barHeight > 58 {
                                 Text("\(range.startDate.compactChineseDate) – \(range.endDate.compactChineseDate)")
                                     .font(.system(size: 9))
-                                    .foregroundStyle(CMTheme.textSecondary)
+                                    .foregroundStyle(palette.textSecondary)
                                     .lineLimit(2)
                             }
                         }
@@ -301,14 +304,14 @@ private struct TimelineLanes: View {
                     : resizePreview.range.endDate
                 Text(date.compactChineseDate)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(CMTheme.textPrimary)
+                    .foregroundStyle(palette.textPrimary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(CMTheme.canvas)
+                    .background(palette.canvas)
                     .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .stroke(CMTheme.separator, lineWidth: 0.7)
+                            .stroke(palette.separator, lineWidth: 0.7)
                     }
                     .allowsHitTesting(false)
             }
@@ -435,7 +438,7 @@ private struct TimelineLanes: View {
         } label: {
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(CMTheme.milestoneColor(for: milestone.colorKey).opacity(0.65))
+                    .fill(palette.milestoneColor(for: milestone.colorKey).opacity(0.65))
                     .frame(width: totalWidth, height: 1)
                 HStack(spacing: 7) {
                     Image(systemName: "diamond.fill")
@@ -445,10 +448,10 @@ private struct TimelineLanes: View {
                         .lineLimit(1)
                         .padding(.trailing, 7)
                 }
-                .foregroundStyle(CMTheme.milestoneColor(for: milestone.colorKey))
+                .foregroundStyle(palette.contentTextColor(for: milestone.colorKey))
                 .padding(.vertical, 4)
                 .padding(.leading, 8)
-                .background(CMTheme.canvas.opacity(0.92))
+                .background(palette.canvas.opacity(0.92))
             }
         }
         .buttonStyle(.plain)
@@ -461,10 +464,10 @@ private struct TimelineLanes: View {
             let y = yPosition(for: Date.now)
             HStack(spacing: 6) {
                 Circle()
-                    .fill(CMTheme.color(for: "clay"))
+                    .fill(palette.color(for: "clay"))
                     .frame(width: 7, height: 7)
                 Rectangle()
-                    .fill(CMTheme.color(for: "clay").opacity(0.72))
+                    .fill(palette.color(for: "clay").opacity(0.72))
                     .frame(width: totalWidth, height: 1)
             }
             .offset(x: -3, y: y - 3)

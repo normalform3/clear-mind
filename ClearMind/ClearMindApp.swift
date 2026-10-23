@@ -1,3 +1,4 @@
+import AppKit
 import SwiftData
 import SwiftUI
 
@@ -113,6 +114,8 @@ enum UITestFixtureSeeder {
 
 @main
 struct ClearMindApp: App {
+    @StateObject private var appearance = AppearanceStore()
+
     private let modelContainer: ModelContainer = {
         do {
             let configuration = ModelConfiguration(
@@ -140,6 +143,11 @@ struct ClearMindApp: App {
     var body: some Scene {
         WindowGroup("Clear Mind") {
             RootView()
+                .environmentObject(appearance)
+                .environment(\.cmPalette, appearance.selection.palette)
+                .foregroundStyle(appearance.selection.palette.textPrimary)
+                .tint(appearance.selection.palette.primaryFill)
+                .preferredColorScheme(.light)
                 .modelContainer(modelContainer)
                 .frame(minWidth: 980, minHeight: 680)
         }
@@ -157,12 +165,35 @@ struct ClearMindApp: App {
                 }
                 .keyboardShortcut("f", modifiers: .command)
             }
+            CommandMenu("外观") {
+                Button("暖陶橙") { selectTheme(.warmTerracotta) }
+                    .keyboardShortcut("1", modifiers: [.command, .option])
+                Button("雾蓝灰") { selectTheme(.mistyBlue) }
+                    .keyboardShortcut("2", modifiers: [.command, .option])
+                Button("鼠尾草绿") { selectTheme(.sageGreen) }
+                    .keyboardShortcut("3", modifiers: [.command, .option])
+                Button("薰衣草灰") { selectTheme(.mutedLavender) }
+                    .keyboardShortcut("4", modifiers: [.command, .option])
+                Button("石墨蓝") { selectTheme(.slateIndigo) }
+                    .keyboardShortcut("5", modifiers: [.command, .option])
+            }
         }
 
         Settings {
             SettingsView()
+                .environmentObject(appearance)
+                .environment(\.cmPalette, appearance.selection.palette)
+                .foregroundStyle(appearance.selection.palette.textPrimary)
+                .tint(appearance.selection.palette.primaryFill)
+                .preferredColorScheme(.light)
                 .modelContainer(modelContainer)
                 .frame(width: 560, height: 420)
         }
+    }
+
+    private func selectTheme(_ theme: AppearanceTheme) {
+        let animation: Animation? = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? nil : .easeOut(duration: 0.2)
+        withAnimation(animation) { appearance.select(theme) }
     }
 }
